@@ -15,6 +15,7 @@ import {
 import { serializeCreateAccountTransaction, serializeMakeTransferTransaction } from './helpers'
 import { parseMogamiSdkEndpoint } from './helpers/parse-mogami-sdk-endpoint'
 import { MogamiSdkConfig } from './interfaces'
+import { TransactionType } from '@kin-tools/kin-memo'
 
 export class MogamiSdkInternal {
   private readonly accountApi: AccountApi
@@ -55,6 +56,7 @@ export class MogamiSdkInternal {
       owner,
       feePayer,
       latestBlockhash,
+      appIndex: this.appConfig.app.index,
     })
 
     const request: CreateAccountRequest = {
@@ -93,6 +95,8 @@ export class MogamiSdkInternal {
       owner,
       latestBlockhash,
       feePayer,
+      appIndex: this.appConfig.app.index,
+      type: TransactionType.Spend,
     })
 
     const request: MakeTransferRequest = {
