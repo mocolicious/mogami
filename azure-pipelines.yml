@@ -29,6 +29,7 @@ stages:
       vmImage: $(vmImageName)
     steps:
     - task: DockerCompose@0
+      displayName: Container registry login
       inputs:
         containerregistrytype: 'Azure Container Registry'
         azureSubscription: 'Kinny(46ac0732-2092-4bbd-a57f-7a0cd242d2f3)'
@@ -43,3 +44,7 @@ stages:
         azureContainerRegistry: '{"loginServer":"kinny.azurecr.io", "id" : "/subscriptions/46ac0732-2092-4bbd-a57f-7a0cd242d2f3/resourceGroups/Kinny-linux/providers/Microsoft.ContainerRegistry/registries/kinny"}'
         dockerComposeFile: '**/docker-compose.yml'
         action: 'Push services'
+        includeSourceTags: true
+        includeLatestTag: true
+
+        
