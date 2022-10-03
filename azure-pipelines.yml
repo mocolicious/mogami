@@ -35,6 +35,9 @@ stages:
         azureSubscription: 'Kinny(46ac0732-2092-4bbd-a57f-7a0cd242d2f3)'
         azureContainerRegistry: '{"loginServer":"kinny.azurecr.io", "id" : "/subscriptions/46ac0732-2092-4bbd-a57f-7a0cd242d2f3/resourceGroups/Kinny-linux/providers/Microsoft.ContainerRegistry/registries/kinny"}'
         dockerComposeFile: '**/docker-compose.yml'
+        projectName: $(Build.Repository.Name)
+        qualifyImageNames: true
+        additionalImageTags: $(Build.BuildId)
         action: 'Build services'
 
     - task: DockerCompose@0
@@ -44,6 +47,9 @@ stages:
         azureContainerRegistry: '{"loginServer":"kinny.azurecr.io", "id" : "/subscriptions/46ac0732-2092-4bbd-a57f-7a0cd242d2f3/resourceGroups/Kinny-linux/providers/Microsoft.ContainerRegistry/registries/kinny"}'
         dockerComposeFile: '**/docker-compose.yml'
         action: 'Push services'
+        projectName: $(Build.Repository.Name)
+        qualifyImageNames: true
+        additionalImageTags: $(Build.BuildId)
         includeSourceTags: true
         includeLatestTag: true
 
