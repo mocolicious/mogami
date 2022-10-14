@@ -15,6 +15,7 @@ import {
   Mint,
   Prisma,
   PrismaClient,
+  UserIdentityType,
   UserRole,
   Wallet,
   WalletType,
@@ -220,16 +221,27 @@ export class ApiCoreDataAccessService extends PrismaClient implements OnModuleIn
     return this.connections.get(appKey)
   }
 
-  getUserByEmail(email: string) {
-    return this.user.findFirst({ where: { emails: { some: { email } } }, include: { emails: true } })
+  async getUserByEmail(email: string) {
+    const found = await this.userEmail.findUnique({ where: { email } })
+
+    if (found) {
+      return this.getUserById(found.ownerId)
+    }
   }
 
   getUserById(userId: string) {
-    return this.user.findUnique({ where: { id: userId }, include: { emails: true } })
+    return this.user.findUnique({ where: { id: userId }, include: { emails: true, identities: true } })
+  }
+
+  async getUserByIdentity(type: UserIdentityType, externalId: string) {
+    return this.user.findFirst({
+      where: { identities: { some: { type, externalId } } },
+      include: { emails: true, identities: true },
+    })
   }
 
   getUserByUsername(username: string) {
-    return this.user.findUnique({ where: { username }, include: { emails: true } })
+    return this.user.findUnique({ where: { username }, include: { emails: true, identities: true } })
   }
 
   async configureDefaultData() {
@@ -261,7 +273,6 @@ export class ApiCoreDataAccessService extends PrismaClient implements OnModuleIn
       await this.user.create({
         data: {
           avatarUrl,
-          name: username,
           password: password ? hashPassword(password) : undefined,
           role,
           username: username,

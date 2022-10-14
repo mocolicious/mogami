@@ -2,7 +2,7 @@ import { Commitment } from '@kin-kinetic/solana'
 import { ApiProperty } from '@nestjs/swagger'
 
 export class CreateAccountRequest {
-  @ApiProperty({ enum: Commitment })
+  @ApiProperty({ enum: Commitment, enumName: 'Commitment' })
   commitment: Commitment
   @ApiProperty()
   environment: string
@@ -16,6 +16,6 @@ export class CreateAccountRequest {
   referenceId?: string
   @ApiProperty({ required: false, nullable: true })
   referenceType?: string
-  @ApiProperty({ type: 'string', format: 'byte' })
+  @ApiProperty()
   tx: string
 }

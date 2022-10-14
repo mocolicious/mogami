@@ -7,7 +7,8 @@ import { UserRole } from '@prisma/client'
 import { CookieOptions } from 'express-serve-static-core'
 import * as fs from 'fs'
 import { join } from 'path'
-import { ProvisionedApp } from './entities/provisioned-app.entity'
+import { AdminConfig } from './entity/admin-config.entity'
+import { ProvisionedApp } from './entity/provisioned-app.entity'
 import { getAuthUsers } from './helpers/get-auth-users'
 import { getProvisionedApps } from './helpers/get-provisioned-apps'
 
@@ -26,6 +27,23 @@ export class ApiConfigDataAccessService {
   })
 
   constructor(private readonly config: ConfigService) {}
+
+  adminConfig(): AdminConfig {
+    return {
+      discordEnabled: this.discordEnabled,
+      githubEnabled: this.githubEnabled,
+      googleEnabled: this.googleEnabled,
+      passwordEnabled: this.authPasswordEnabled,
+    }
+  }
+
+  get adminUrl(): string {
+    return this.config.get('admin.url')
+  }
+
+  get authPasswordEnabled(): boolean {
+    return this.config.get('auth.passwordEnabled')
+  }
 
   get authUsers(): { username: string; password: string; role: UserRole; email?: string; avatarUrl?: string }[] {
     const users = this.config.get('auth.users')
@@ -94,8 +112,56 @@ export class ApiConfigDataAccessService {
     return this.config.get('cors.origins')
   }
 
+  get discordCallbackUrl() {
+    return this.apiUrl + '/auth/discord/callback'
+  }
+
+  get discordClientId(): string {
+    return this.config.get('discord.clientId')
+  }
+
+  get discordClientSecret(): string {
+    return this.config.get('discord.clientSecret')
+  }
+
+  get discordEnabled(): boolean {
+    return this.config.get('discord.enabled') && !!this.discordClientId && !!this.discordClientSecret
+  }
+
   get environment() {
     return this.config.get('environment')
+  }
+
+  get githubCallbackUrl() {
+    return this.apiUrl + '/auth/github/callback'
+  }
+
+  get githubClientId(): string {
+    return this.config.get('github.clientId')
+  }
+
+  get githubClientSecret(): string {
+    return this.config.get('github.clientSecret')
+  }
+
+  get githubEnabled(): boolean {
+    return this.config.get('github.enabled') && !!this.githubClientId && !!this.githubClientSecret
+  }
+
+  get googleCallbackUrl() {
+    return this.apiUrl + '/auth/google/callback'
+  }
+
+  get googleClientId(): string {
+    return this.config.get('google.clientId')
+  }
+
+  get googleClientSecret(): string {
+    return this.config.get('google.clientSecret')
+  }
+
+  get googleEnabled(): boolean {
+    return this.config.get('google.enabled') && !!this.googleClientId && !!this.googleClientSecret
   }
 
   get graphqlConfig(): ApolloDriverConfig {
