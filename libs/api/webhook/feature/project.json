@@ -11,12 +11,13 @@
     },
     "test": {
       "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/libs/api/webhook/feature"],
+      "outputs": ["{workspaceRoot}/coverage/libs/api/webhook/feature"],
       "options": {
         "jestConfig": "libs/api/webhook/feature/jest.config.ts",
         "passWithNoTests": true
       }
     }
   },
-  "tags": ["scope:api", "type:feature"]
+  "tags": ["scope:api", "type:feature"],
+  "name": "api-webhook-feature"
 }

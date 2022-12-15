@@ -4,8 +4,8 @@ import {
   generateMakeTransferBatchTransaction,
   generateMakeTransferTransaction,
   serializeTransaction,
+  TransactionType,
 } from '@kin-kinetic/solana'
-import { TransactionType } from '@kin-tools/kin-memo'
 import { AxiosRequestConfig } from 'axios'
 import {
   AccountApi,
@@ -14,6 +14,7 @@ import {
   AppConfig,
   AppConfigMint,
   BalanceResponse,
+  CloseAccountRequest,
   Configuration,
   CreateAccountRequest,
   HistoryResponse,
@@ -24,7 +25,9 @@ import {
 } from '../generated'
 import { NAME, VERSION } from '../version'
 import {
+  CloseAccountOptions,
   CreateAccountOptions,
+  GetAccountInfoOptions,
   GetBalanceOptions,
   GetHistoryOptions,
   GetTokenAccountsOptions,
@@ -56,6 +59,30 @@ export class KineticSdkInternal {
     this.airdropApi = new AirdropApi(apiConfig)
     this.appApi = new AppApi(apiConfig)
     this.transactionApi = new TransactionApi(apiConfig)
+  }
+
+  async closeAccount(options: CloseAccountOptions): Promise<Transaction> {
+    const appConfig = this.ensureAppConfig()
+    const mint = this.getAppMint(appConfig, options.mint?.toString())
+
+    const commitment = options.commitment || Commitment.Confirmed
+
+    const request: CloseAccountRequest = {
+      account: options.account.toString(),
+      commitment,
+      environment: this.sdkConfig.environment,
+      index: this.sdkConfig.index,
+      mint: mint.publicKey,
+      referenceId: options.referenceId,
+      referenceType: options.referenceType,
+    }
+
+    return this.accountApi
+      .closeAccount(request)
+      .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   async createAccount(options: CreateAccountOptions): Promise<Transaction> {
@@ -92,19 +119,41 @@ export class KineticSdkInternal {
       tx: serializeTransaction(tx),
     }
 
-    return this.accountApi.createAccount(request).then((res) => res.data)
+    return this.accountApi
+      .createAccount(request)
+      .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
+  }
+
+  getAccountInfo(options: GetAccountInfoOptions) {
+    return this.accountApi
+      .getAccountInfo(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString())
+      .then((res) => res.data)
   }
 
   async getAppConfig(environment: string, index: number) {
-    const res = await this.appApi.getAppConfig(environment, index)
-    this.appConfig = res.data
-    return this.appConfig
+    return this.appApi
+      .getAppConfig(environment, index)
+      .then((res) => res.data)
+      .then((appConfig) => {
+        this.appConfig = appConfig
+        return this.appConfig
+      })
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   async getBalance(options: GetBalanceOptions): Promise<BalanceResponse> {
+    const commitment = options.commitment || Commitment.Finalized
     return this.accountApi
-      .getBalance(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString())
+      .getBalance(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), commitment)
       .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   getHistory(options: GetHistoryOptions): Promise<HistoryResponse[]> {
@@ -114,6 +163,9 @@ export class KineticSdkInternal {
     return this.accountApi
       .getHistory(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), mint.publicKey)
       .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   getTokenAccounts(options: GetTokenAccountsOptions): Promise<string[]> {
@@ -123,12 +175,18 @@ export class KineticSdkInternal {
     return this.accountApi
       .getTokenAccounts(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), mint.publicKey)
       .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   getTransaction(options: GetTransactionOptions) {
     return this.transactionApi
       .getTransaction(this.sdkConfig.environment, this.sdkConfig.index, options.signature)
       .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   async makeTransfer(options: MakeTransferOptions) {
@@ -173,6 +231,8 @@ export class KineticSdkInternal {
       referenceId: options.referenceId,
       referenceType: options.referenceType,
       tx: serializeTransaction(tx),
+    }).catch((err) => {
+      throw new Error(err?.response?.data?.message ?? 'Unknown error')
     })
   }
 
@@ -211,6 +271,8 @@ export class KineticSdkInternal {
       referenceId,
       referenceType,
       tx: serializeTransaction(tx),
+    }).catch((err) => {
+      throw new Error(err?.response?.data?.message ?? 'Unknown error')
     })
   }
 
@@ -228,6 +290,9 @@ export class KineticSdkInternal {
         mint: mint.publicKey,
       })
       .then((res) => res.data)
+      .catch((err) => {
+        throw new Error(err?.response?.data?.message ?? 'Unknown error')
+      })
   }
 
   private apiBaseOptions(headers: Record<string, string> = {}): AxiosRequestConfig {

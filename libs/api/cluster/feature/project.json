@@ -11,12 +11,13 @@
     },
     "test": {
       "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/libs/api/cluster/feature"],
+      "outputs": ["{workspaceRoot}/coverage/libs/api/cluster/feature"],
       "options": {
         "jestConfig": "libs/api/cluster/feature/jest.config.ts",
         "passWithNoTests": true
       }
     }
   },
-  "tags": ["scope:api", "type:feature"]
+  "tags": ["scope:api", "type:feature"],
+  "name": "api-cluster-feature"
 }

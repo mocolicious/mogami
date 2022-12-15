@@ -1,9 +1,16 @@
-import { Connection, PublicKey, Transaction as SolanaTransaction } from '@solana/web3.js'
+import {
+  AccountInfo,
+  Connection,
+  ParsedAccountData,
+  PublicKey,
+  Transaction as SolanaTransaction,
+} from '@solana/web3.js'
 import axios from 'axios'
 import BigNumber from 'bignumber.js'
 import { NAME } from '../version'
-import { convertCommitment, getPublicKey, parseEndpoint, parseTransactionSimulation } from './helpers'
+import { convertCommitment, getPublicKey, parseEndpoint, parseTransactionSimulation, removeDecimals } from './helpers'
 import {
+  BalanceMint,
   BalanceMintMap,
   BalanceSummary,
   BalanceToken,
@@ -55,14 +62,15 @@ export class Solana {
     }
   }
 
-  getAccountInfo(accountId: PublicKeyString, { commitment = Commitment.Confirmed }: { commitment?: Commitment }) {
-    this.config.logger?.log(`Getting account info: ${accountId}`)
-    return this.connection.getParsedAccountInfo(new PublicKey(accountId), convertCommitment(commitment))
-  }
-
-  async getBalance(accountId: PublicKeyString, mints: string | string[]): Promise<BalanceSummary> {
+  async getBalance(
+    accountId: PublicKeyString,
+    mints: BalanceMint | BalanceMint[],
+    commitment: Commitment = Commitment.Finalized,
+  ): Promise<BalanceSummary> {
     mints = Array.isArray(mints) ? mints : [mints]
-    this.config.logger?.log(`Getting account balance summary: ${accountId} for mints ${mints.join(', ')}`)
+    this.config.logger?.log(
+      `Getting account balance summary: ${accountId} for mints ${mints.map((mint) => mint.publicKey).join(', ')}`,
+    )
 
     if (!mints.length) {
       throw new Error(`getBalance: No mints provided.`)
@@ -71,26 +79,34 @@ export class Solana {
     try {
       const tokens: BalanceToken[] = []
 
-      const tokenAccountResult: PromiseSettledResult<{ mint: string; accounts: string[] }>[] = await Promise.allSettled(
+      const tokenAccountResult: PromiseSettledResult<{
+        mint: BalanceMint
+        accounts: string[]
+      }>[] = await Promise.allSettled(
         mints.map((mint) => {
-          return this.getTokenAccounts(accountId, mint).then((accounts) => ({ mint, accounts }))
+          return this.getTokenAccounts(accountId, mint.publicKey).then((accounts) => ({ mint, accounts }))
         }),
       )
       const tokenAccounts = tokenAccountResult
         .filter((item) => item.status === 'fulfilled')
-        .map((item) => (item as PromiseFulfilledResult<{ mint: string; accounts: string[] }>).value)
+        .map((item) => (item as PromiseFulfilledResult<{ mint: BalanceMint; accounts: string[] }>).value)
 
       const mintMap: Record<string, string[]> = mints.reduce((acc, curr) => {
         return {
           ...acc,
-          [curr]: tokenAccounts.find((ta) => ta.mint === curr)?.accounts || [],
+          [curr.publicKey]: tokenAccounts.find((ta) => ta.mint.publicKey === curr.publicKey)?.accounts || [],
         }
       }, {})
 
       for (const { mint, accounts } of tokenAccounts) {
         for (const account of accounts) {
-          const { balance } = await this.getTokenBalance(account)
-          tokens.push({ account, mint, balance })
+          const { balance } = await this.getTokenBalance(account, commitment)
+          tokens.push({
+            account,
+            balance: removeDecimals(balance, mint.decimals).toString(),
+            decimals: mint.decimals,
+            mint: mint.publicKey,
+          })
         }
       }
 
@@ -101,7 +117,7 @@ export class Solana {
       }, {})
 
       return {
-        balance: mintBalance[defaultMint] ? mintBalance[defaultMint] : new BigNumber(0),
+        balance: (mintBalance[defaultMint.publicKey] ? mintBalance[defaultMint.publicKey] : '0').toString(),
         mintMap,
         mints: mintBalance,
         tokens,
@@ -128,6 +144,16 @@ export class Solana {
     return this.connection.getLatestBlockhash()
   }
 
+  async getParsedAccountInfo(
+    accountId: PublicKeyString,
+    commitment = Commitment.Confirmed,
+  ): Promise<AccountInfo<ParsedAccountData>> {
+    this.config.logger?.log(`Parsing account info: ${accountId} with commitment ${commitment}`)
+    const result = await this.connection.getParsedAccountInfo(new PublicKey(accountId), convertCommitment(commitment))
+
+    return result.value as AccountInfo<ParsedAccountData>
+  }
+
   async getTokenAccounts(account: PublicKeyString, mint: PublicKeyString) {
     this.config.logger?.log(`Getting token account: ${getPublicKey(account)} / mint: ${getPublicKey(mint)}`)
     const res = await this.connection.getTokenAccountsByOwner(getPublicKey(account), { mint: getPublicKey(mint) })
@@ -139,19 +165,16 @@ export class Solana {
     return Promise.all(accounts.map((account) => this.getAccountHistory(account)))
   }
 
-  async getTokenBalance(account: PublicKeyString): Promise<TokenBalance> {
-    this.config.logger?.log(`Getting token balance: ${getPublicKey(account)}`)
-    const res = await this.connection.getTokenAccountBalance(getPublicKey(account))
+  async getTokenBalance(
+    account: PublicKeyString,
+    commitment: Commitment = Commitment.Finalized,
+  ): Promise<TokenBalance> {
+    this.config.logger?.log(`Getting token balance: ${getPublicKey(account)} with commitment: ${commitment}`)
+    const res = await this.connection.getTokenAccountBalance(getPublicKey(account), convertCommitment(commitment))
     return {
       account,
       balance: new BigNumber(res.value.amount),
     }
-  }
-
-  async getTokenBalances(account: PublicKeyString, mint: PublicKeyString): Promise<TokenBalance[]> {
-    this.config.logger?.log(`Getting token balances: ${getPublicKey(account)}`)
-    const tokens = await this.getTokenAccounts(account, mint)
-    return Promise.all(tokens.map(async (account) => this.getTokenBalance(account)))
   }
 
   async getTokenHistory(account: PublicKeyString, mint: PublicKeyString) {
@@ -162,7 +185,7 @@ export class Solana {
   async getTransaction(signature: string) {
     this.config.logger?.log(`Getting transaction: ${signature} `)
     const status = await this.connection.getSignatureStatus(signature, { searchTransactionHistory: true })
-    const transaction = await this.connection.getTransaction(signature)
+    const transaction = await this.connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 })
     return { signature, status, transaction }
   }
 
@@ -174,7 +197,7 @@ export class Solana {
   async sendRawTransaction(tx: SolanaTransaction) {
     await this.simulateTransaction(tx)
     this.config.logger?.log(`Send Raw Transaction`)
-    return this.connection.sendRawTransaction(tx.serialize())
+    return this.connection.sendRawTransaction(tx.serialize(), { skipPreflight: false })
   }
 
   async simulateTransaction(tx: SolanaTransaction) {

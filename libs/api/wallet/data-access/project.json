@@ -11,12 +11,13 @@
     },
     "test": {
       "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/libs/api/wallet/data-access"],
+      "outputs": ["{workspaceRoot}/coverage/libs/api/wallet/data-access"],
       "options": {
         "jestConfig": "libs/api/wallet/data-access/jest.config.ts",
         "passWithNoTests": true
       }
     }
   },
-  "tags": ["scope:api", "type:data-access"]
+  "tags": ["scope:api", "type:data-access"],
+  "name": "api-wallet-data-access"
 }

@@ -32,13 +32,6 @@ input AdminClusterUpdateInput {
   status: ClusterStatus
 }
 
-type AdminConfig {
-  discordEnabled: Boolean!
-  githubEnabled: Boolean!
-  googleEnabled: Boolean!
-  passwordEnabled: Boolean!
-}
-
 input AdminMintCreateInput {
   address: String!
   clusterId: String!
@@ -47,6 +40,13 @@ input AdminMintCreateInput {
   logoUrl: String
   name: String!
   symbol: String!
+}
+
+input AdminQueueLoadInput {
+  environment: String!
+  index: Int!
+  payload: JSON!
+  type: QueueType!
 }
 
 input AdminUserCreateInput {
@@ -154,6 +154,7 @@ type Cluster {
   createdAt: DateTime
   endpointPrivate: String
   endpointPublic: String
+  envs: [AppEnv!]
   explorer: String
   id: String
   mints: [Mint!]
@@ -184,6 +185,29 @@ scalar DateTime
 The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
 """
 scalar JSON @specifiedBy(url: "http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf")
+
+type Job {
+  attemptsMade: Int
+  data: JSON
+  failedReason: String
+  finishedOn: Int
+  id: String
+  name: String
+  opts: JSON
+  processedOn: Int
+  returnvalue: JSON
+  stacktrace: [String!]
+  timestamp: Int
+}
+
+enum JobStatus {
+  active
+  completed
+  delayed
+  failed
+  paused
+  waiting
+}
 
 type Mint {
   addMemo: Boolean
@@ -216,9 +240,16 @@ type Mutation {
   adminDeleteApp(appId: String!): App
   adminDeleteAppEnv(appEnvId: String!, appId: String!): AppEnv
   adminDeleteCluster(clusterId: String!): Cluster
+  adminDeleteMint(mintId: String!): Mint
   adminDeleteUser(userId: String!): User
   adminDeleteWallet(walletId: String!): Wallet
   adminMintCreate(input: AdminMintCreateInput!): Cluster
+  adminMintImportWallet(mintId: String!, secret: String!): Mint
+  adminQueueClean(status: JobStatus, type: QueueType!): Boolean
+  adminQueueDeleteJob(jobId: String!, type: QueueType!): Boolean
+  adminQueueLoad(input: AdminQueueLoadInput!): Queue
+  adminQueuePause(type: QueueType!): Boolean
+  adminQueueResume(type: QueueType!): Boolean
   adminUpdateApp(appId: String!, input: AdminAppUpdateInput!): App
   adminUpdateCluster(clusterId: String!, input: AdminClusterUpdateInput!): Cluster
   adminUpdateUser(input: AdminUserUpdateInput!, userId: String!): User
@@ -231,6 +262,7 @@ type Mutation {
   userAppEnvMintDisable(appEnvId: String!, appId: String!, mintId: String!): AppEnv
   userAppEnvMintEnable(appEnvId: String!, appId: String!, mintId: String!): AppEnv
   userAppEnvMintSetWallet(appEnvId: String!, appId: String!, mintId: String!, walletId: String!): AppEnv
+  userAppEnvPurgeTransactions(appEnvId: String!, status: TransactionStatus): AppEnv
   userAppEnvRemoveAllowedIp(appEnvId: String!, ip: String!): AppEnv
   userAppEnvRemoveAllowedUa(appEnvId: String!, ua: String!): AppEnv
   userAppEnvRemoveBlockedIp(appEnvId: String!, ip: String!): AppEnv
@@ -244,7 +276,7 @@ type Mutation {
   userDeleteAppEnv(appEnvId: String!, appId: String!): AppEnv
   userDeleteWallet(appEnvId: String!, walletId: String!): Wallet
   userGenerateWallet(appEnvId: String!): Wallet
-  userImportWallet(appEnvId: String!, secretKey: String!): Wallet
+  userImportWallet(appEnvId: String!, secret: String!): Wallet
   userUpdateApp(appId: String!, input: UserAppUpdateInput!): App
   userUpdateAppEnv(appEnvId: String!, appId: String!, input: UserAppEnvUpdateInput!): AppEnv
   userUpdateAppMint(appId: String!, appMintId: String!, input: UserAppMintUpdateInput!): AppMint
@@ -255,7 +287,9 @@ type Query {
   adminApps: [App!]
   adminCluster(clusterId: String!): Cluster
   adminClusters: [Cluster!]
-  adminConfig: AdminConfig!
+  adminQueue(type: QueueType!): Queue
+  adminQueueJobs(statuses: [JobStatus!]!, type: QueueType!): [Job!]
+  adminQueues: [Queue!]
   adminUser(userId: String!): User
   adminUsers: [User!]
   adminWallet(walletId: String!): Wallet
@@ -279,6 +313,28 @@ type Query {
   userWalletBalance(appEnvId: String!, walletId: String!): WalletBalance
   userWalletBalances(appEnvId: String!, walletId: String!): [WalletBalance!]
   userWallets(appEnvId: String!): [Wallet!]
+  webConfig: WebConfig!
+}
+
+type Queue {
+  count: QueueCount
+  info: JSON
+  isPaused: Boolean
+  name: String!
+  type: QueueType!
+}
+
+type QueueCount {
+  active: Int
+  completed: Int
+  delayed: Int
+  failed: Int
+  paused: Int
+  waiting: Int
+}
+
+enum QueueType {
+  CloseAccount
 }
 
 type Transaction {
@@ -483,6 +539,13 @@ enum WalletType {
   Generated
   Imported
   Provisioned
+}
+
+type WebConfig {
+  discordEnabled: Boolean!
+  githubEnabled: Boolean!
+  googleEnabled: Boolean!
+  passwordEnabled: Boolean!
 }
 
 type Webhook {

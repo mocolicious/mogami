@@ -7,8 +7,8 @@ import { UserRole } from '@prisma/client'
 import { CookieOptions } from 'express-serve-static-core'
 import * as fs from 'fs'
 import { join } from 'path'
-import { AdminConfig } from './entity/admin-config.entity'
 import { ProvisionedApp } from './entity/provisioned-app.entity'
+import { WebConfig } from './entity/web-config.entity'
 import { getAuthUsers } from './helpers/get-auth-users'
 import { getProvisionedApps } from './helpers/get-provisioned-apps'
 
@@ -27,19 +27,6 @@ export class ApiConfigDataAccessService {
   })
 
   constructor(private readonly config: ConfigService) {}
-
-  adminConfig(): AdminConfig {
-    return {
-      discordEnabled: this.discordEnabled,
-      githubEnabled: this.githubEnabled,
-      googleEnabled: this.googleEnabled,
-      passwordEnabled: this.authPasswordEnabled,
-    }
-  }
-
-  get adminUrl(): string {
-    return this.config.get('admin.url')
-  }
 
   get authPasswordEnabled(): boolean {
     return this.config.get('auth.passwordEnabled')
@@ -80,6 +67,16 @@ export class ApiConfigDataAccessService {
     return this.config.get('api.version')
   }
 
+  get cache(): { [key: string]: { [key: string]: { ttl: number } } } {
+    return {
+      solana: {
+        getLatestBlockhash: {
+          ttl: this.config.get('cache.solana.getLatestBlockhash.ttl'),
+        },
+      },
+    }
+  }
+
   get cookieDomains(): string[] {
     return this.config.get('cookie.domains')
   }
@@ -93,19 +90,24 @@ export class ApiConfigDataAccessService {
     if (!found) {
       this.logger.warn(`Not configured to set cookies for ${hostname}`)
     }
+    const isSecure = this.apiUrl.startsWith('https')
     return {
       httpOnly: true,
-      secure: true,
+      secure: isSecure,
       domain: found || this.cookieDomains[0],
-      sameSite: this.cookieDomains?.length > 1 ? 'none' : 'strict',
+      sameSite: isSecure ? 'none' : 'strict',
     }
   }
 
   get cors() {
     return {
       credentials: true,
-      origin: this.corsOrigins,
+      origin: (origin, callback) => callback(null, this.corsBypass ? origin : this.corsOrigins),
     }
+  }
+
+  get corsBypass(): boolean {
+    return this.config.get('cors.bypass')
   }
 
   get corsOrigins(): string[] {
@@ -213,9 +215,18 @@ export class ApiConfigDataAccessService {
     return 'api'
   }
 
+  get queueCloseAccountStart() {
+    return this.config.get('queue.closeAccount.start')
+  }
+
+  get redisUrl() {
+    return this.config.get('redis.url')
+  }
+
   get solanaDevnetEnabled(): boolean {
     return this.config.get('solana.devnet.enabled')
   }
+
   get solanaDevnetRpcEndpoint() {
     return this.config.get('solana.devnet.rpcEndpoint')
   }
@@ -234,6 +245,19 @@ export class ApiConfigDataAccessService {
 
   get solanaMainnetRpcEndpoint() {
     return this.config.get('solana.mainnet.rpcEndpoint')
+  }
+
+  webConfig(): WebConfig {
+    return {
+      discordEnabled: this.discordEnabled,
+      githubEnabled: this.githubEnabled,
+      googleEnabled: this.googleEnabled,
+      passwordEnabled: this.authPasswordEnabled,
+    }
+  }
+
+  get webUrl(): string {
+    return this.config.get('web.url')
   }
 
   configSummary() {

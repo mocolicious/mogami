@@ -11,12 +11,13 @@
     },
     "test": {
       "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/libs/api/auth/util"],
+      "outputs": ["{workspaceRoot}/coverage/libs/api/auth/util"],
       "options": {
         "jestConfig": "libs/api/auth/util/jest.config.ts",
         "passWithNoTests": true
       }
     }
   },
-  "tags": ["type:util", "scope:api"]
+  "tags": ["type:util", "scope:api"],
+  "name": "api-auth-util"
 }

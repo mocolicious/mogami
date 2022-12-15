@@ -37,12 +37,13 @@
     },
     "test": {
       "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/libs/sdk"],
+      "outputs": ["{workspaceRoot}/coverage/libs/sdk"],
       "options": {
         "jestConfig": "libs/sdk/jest.config.ts",
         "passWithNoTests": true
       }
     }
   },
-  "tags": []
+  "tags": [],
+  "name": "sdk"
 }

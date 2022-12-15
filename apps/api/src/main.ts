@@ -6,6 +6,7 @@ import { OgmaService } from '@ogma/nestjs-module'
 import { exec } from 'child_process'
 import cookieParser from 'cookie-parser'
 import redirectSSL from 'redirect-ssl'
+import { json } from 'express'
 import { AppModule } from './app/app.module'
 
 async function bootstrap() {
@@ -15,21 +16,26 @@ async function bootstrap() {
   app.useLogger(logger)
   await OpenTelemetrySdk.start(config.metricsConfig)
   app.setGlobalPrefix(config.prefix)
-  app.useGlobalPipes(new ValidationPipe({ transform: true }))
+  app.useGlobalPipes(new ValidationPipe({ forbidUnknownValues: false, transform: true }))
   app.enableCors(config.cors)
   app.use(redirectSSL.create({ enabled: config.isProduction }))
   config.configureSwagger(app)
   app.use(cookieParser())
+  // TODO: Make this limit configurable
+  app.use(json({ limit: '10mb' }))
+  const host = `http://${config.host}:${config.port}`
   try {
     await app.listen(config.port, config.host)
-    Logger.log(`🚀 API is running on http://${config.host}:${config.port}/${config.prefix}.`)
-    Logger.log(`🚀 Admin API is running on http://localhost:${config.port}/graphql.`)
-    Logger.log(`🔋 ADMIN_URL: ${config.adminUrl}`)
+    Logger.log(`🚀 API is listening on ${host}/${config.prefix}.`)
+    Logger.log(`🚀 Admin API is listening on ${host}/graphql.`)
     Logger.log(`🔋 API_URL: ${config.apiUrl}`)
+    Logger.log(`🔋 WEB_URL: ${config.webUrl}`)
     Logger.log(`🔋 COOKIE_DOMAINS: ${config.cookieDomains.join(', ')}`)
     Logger.log(
       `🔋 CORS: ${
-        config?.corsOrigins
+        config.corsBypass
+          ? 'Bypassed'
+          : config?.corsOrigins
           ? `enabled for: ${Array.isArray(config?.corsOrigins) ? config?.corsOrigins?.join(', ') : config?.corsOrigins}`
           : 'disabled'
       }`,

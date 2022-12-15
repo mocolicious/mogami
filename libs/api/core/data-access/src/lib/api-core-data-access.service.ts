@@ -1,9 +1,10 @@
 import { AirdropConfig } from '@kin-kinetic/api/airdrop/util'
 import { hashPassword } from '@kin-kinetic/api/auth/util'
+import { ProvisionedCluster } from '@kin-kinetic/api/cluster/util'
 import { ApiConfigDataAccessService } from '@kin-kinetic/api/config/data-access'
-import { getVerboseLogger } from '@kin-kinetic/api/core/util'
+import { parseAppKey } from '@kin-kinetic/api/core/util'
 import { Keypair } from '@kin-kinetic/keypair'
-import { getPublicKey, Solana } from '@kin-kinetic/solana'
+import { getPublicKey } from '@kin-kinetic/solana'
 import { Injectable, Logger, NotFoundException, OnModuleInit, UnauthorizedException } from '@nestjs/common'
 import { Counter } from '@opentelemetry/api-metrics'
 import {
@@ -20,8 +21,8 @@ import {
   Wallet,
   WalletType,
 } from '@prisma/client'
-import { omit } from 'lodash'
 import { MetricService } from 'nestjs-otel'
+import { ApiCoreCacheService } from './cache/api-core-cache.service'
 
 export type AppEnvironment = AppEnv & {
   app: App
@@ -34,12 +35,15 @@ export type AppEnvironment = AppEnv & {
 export class ApiCoreDataAccessService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger(ApiCoreDataAccessService.name)
   readonly airdropConfig = new Map<string, Omit<AirdropConfig, 'connection'>>()
-  readonly connections = new Map<string, Solana>()
 
   private getAppByEnvironmentIndexCounter: Counter
   private getAppByIndexCounter: Counter
 
-  constructor(readonly config: ApiConfigDataAccessService, readonly metrics: MetricService) {
+  constructor(
+    readonly cache: ApiCoreCacheService,
+    readonly config: ApiConfigDataAccessService,
+    readonly metrics: MetricService,
+  ) {
     super()
   }
 
@@ -100,11 +104,33 @@ export class ApiCoreDataAccessService extends PrismaClient implements OnModuleIn
     return this.wallet.create({ data: { secretKey, publicKey, type: WalletType.Provisioned, ownerId: userId } })
   }
 
+  getAirdropConfig(mint: Mint, cluster: Cluster) {
+    if (!this.airdropConfig.get(mint.id)) {
+      if (!mint.airdropSecretKey) {
+        throw new Error(`Airdrop secret key not set for mint ${mint.id}.`)
+      }
+      const feePayer = Keypair.fromSecret(mint.airdropSecretKey).solana
+      this.airdropConfig.set(mint.id, {
+        airdropAmount: mint.airdropAmount || 1000,
+        airdropMax: mint.airdropMax || 50000,
+        decimals: mint.decimals,
+        feePayer,
+        mint: getPublicKey(mint.address),
+      })
+      this.logger.log(
+        `[${cluster.name}/${mint.symbol}] Configured Airdrop wallet ${feePayer.publicKey.toBase58()} for ${
+          mint.name
+        } (${mint.decimals} decimals) (${mint?.address})`,
+      )
+    }
+    return this.airdropConfig.get(mint.id)
+  }
+
   private getAppKeypair(index: number): Keypair {
-    const envVar = process.env[`APP_${index}_FEE_PAYER_BYTE_ARRAY`]
+    const envVar = process.env[`APP_${index}_FEE_PAYER_SECRET`] || process.env[`APP_${index}_FEE_PAYER_BYTE_ARRAY`]
     if (envVar) {
       this.logger.verbose(`getAppKeypair app ${index}: read from env var`)
-      return Keypair.fromByteArray(JSON.parse(envVar))
+      return Keypair.fromSecret(envVar)
     }
     this.logger.verbose(`getAppKeypair app ${index}: generated new keypair`)
     return Keypair.random()
@@ -144,17 +170,8 @@ export class ApiCoreDataAccessService extends PrismaClient implements OnModuleIn
     })
   }
 
-  async getAppEnvironment(environment: string, index: number): Promise<{ appEnv: AppEnvironment; appKey: string }> {
-    const appEnv = await this.getAppByEnvironmentIndex(environment, index)
-    const appKey = this.getAppKey(environment, index)
-    return {
-      appEnv,
-      appKey,
-    }
-  }
-
-  getAppByEnvironmentIndex(environment: string, index: number): Promise<AppEnvironment> {
-    const appKey = this.getAppKey(environment, index)
+  getAppEnvironmentByAppKey(appKey: string): Promise<AppEnvironment> {
+    const { environment, index } = parseAppKey(appKey)
     this.getAppByEnvironmentIndexCounter?.add(1, { appKey })
     return this.appEnv.findFirst({
       where: { app: { index }, name: environment },
@@ -201,24 +218,6 @@ export class ApiCoreDataAccessService extends PrismaClient implements OnModuleIn
 
   getAppEnvById(appEnvId: string) {
     return this.appEnv.findUnique({ where: { id: appEnvId }, include: { app: true } })
-  }
-
-  getAppKey(environment: string, index: number): string {
-    return `app-${index}-${environment}`
-  }
-
-  async getSolanaConnection(environment: string, index: number): Promise<Solana> {
-    const appKey = this.getAppKey(environment, index)
-    if (!this.connections.has(appKey)) {
-      const env = await this.getAppByEnvironmentIndex(environment, index)
-      this.connections.set(
-        appKey,
-        new Solana(env.cluster.endpointPrivate, {
-          logger: getVerboseLogger(`@kin-kinetic/solana:${appKey}`),
-        }),
-      )
-    }
-    return this.connections.get(appKey)
   }
 
   async getUserByEmail(email: string) {
@@ -291,54 +290,34 @@ export class ApiCoreDataAccessService extends PrismaClient implements OnModuleIn
 
   private async configureDefaultClusters() {
     return Promise.all(
-      this.config.provisionedClusters
-        .filter((cluster) => !!cluster)
-        .map((item) => {
-          const { mints, ...cluster } = item
-          return this.cluster
-            .upsert({
-              where: { id: cluster.id },
-              update: { ...omit(cluster, 'status') },
-              create: { ...cluster },
-            })
-            .then((res) => {
-              this.logger.log(`Configured cluster ${res.name} (${res.status})`)
-              return this.configureMints(mints)
-            })
-        }),
+      this.config.provisionedClusters.filter((cluster) => !!cluster).map((item) => this.configureDefaultCluster(item)),
     )
+  }
+
+  private async configureDefaultCluster(item: ProvisionedCluster) {
+    const { mints, ...cluster } = item
+    const existing = await this.cluster.findUnique({ where: { id: cluster.id } })
+
+    if (existing) {
+      this.logger.log(`Cluster ${existing.name} already configured: (${existing.status})`)
+      return
+    }
+
+    return this.cluster.create({ data: cluster }).then((res) => {
+      this.logger.log(`Configured cluster ${res.name} (${res.status})`)
+      return this.configureMints(mints)
+    })
   }
 
   private async configureMints(mints: Prisma.MintCreateInput[]) {
     return Promise.all(
       mints.map((mint) =>
-        this.mint
-          .upsert({
-            where: { id: mint.id },
-            update: { ...mint },
-            create: { ...mint },
-            include: { cluster: true },
-          })
-          .then((res) => {
-            if (res.airdropSecretKey) {
-              this.airdropConfig.set(mint.id, {
-                airdropAmount: mint.airdropAmount || 1000,
-                airdropMax: mint.airdropMax || 50000,
-                decimals: mint.decimals,
-                feePayer: Keypair.fromByteArray(JSON.parse(res.airdropSecretKey)).solana,
-                mint: getPublicKey(mint.address),
-              })
-            }
-            this.logger.log(
-              `[${res.symbol}] Configured mint ${res.name} (${res.decimals} decimals) (${res?.address}) on ${
-                res?.cluster?.name
-              } ${
-                this.airdropConfig.has(mint.id)
-                  ? `(Airdrop ${this.airdropConfig.get(mint.id).feePayer.publicKey?.toBase58()})`
-                  : ''
-              }`,
-            )
-          }),
+        this.mint.upsert({
+          where: { id: mint.id },
+          update: { ...mint },
+          create: { ...mint },
+          include: { cluster: true },
+        }),
       ),
     )
   }

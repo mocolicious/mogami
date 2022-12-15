@@ -12,12 +12,13 @@
     },
     "test": {
       "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/libs/api/cron/data-access"],
+      "outputs": ["{workspaceRoot}/coverage/libs/api/cron/data-access"],
       "options": {
         "jestConfig": "libs/api/cron/data-access/jest.config.ts",
         "passWithNoTests": true
       }
     }
   },
-  "tags": ["scope:api", "type:data-access"]
+  "tags": ["scope:api", "type:data-access"],
+  "name": "api-cron-data-access"
 }

@@ -1,8 +1,10 @@
 import { ApiCoreDataAccessService, AppEnvironment } from '@kin-kinetic/api/core/data-access'
+import { getAppKey } from '@kin-kinetic/api/core/util'
+import { ApiSolanaDataAccessService } from '@kin-kinetic/api/solana/data-access'
 import { ApiWebhookDataAccessService, WebhookType } from '@kin-kinetic/api/webhook/data-access'
 import { Keypair } from '@kin-kinetic/keypair'
-import { Commitment, parseAndSignTokenTransfer, Solana } from '@kin-kinetic/solana'
-import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common'
+import { Commitment, parseAndSignTokenTransfer, removeDecimals, Solana } from '@kin-kinetic/solana'
+import { BadRequestException, Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common'
 import { Counter } from '@opentelemetry/api-metrics'
 import {
   App,
@@ -45,7 +47,11 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
   private sendVerifyWebhookErrorCounter: Counter
   private sendVerifyWebhookSuccessCounter: Counter
 
-  constructor(readonly data: ApiCoreDataAccessService, private readonly webhook: ApiWebhookDataAccessService) {}
+  constructor(
+    readonly data: ApiCoreDataAccessService,
+    private readonly solana: ApiSolanaDataAccessService,
+    private readonly webhook: ApiWebhookDataAccessService,
+  ) {}
 
   async cleanupStaleTransactions() {
     const stale = await this.getExpiredTransactions()
@@ -135,18 +141,20 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     )
   }
 
-  async getLatestBlockhash(environment: string, index: number): Promise<LatestBlockhashResponse> {
-    const solana = await this.data.getSolanaConnection(environment, index)
-
-    return solana.getLatestBlockhash()
+  async getLatestBlockhash(appKey: string): Promise<LatestBlockhashResponse> {
+    return this.data.cache.wrap<LatestBlockhashResponse>(
+      'solana',
+      `${appKey}:getLatestBlockhash`,
+      () => this.solana.getConnection(appKey).then((solana) => solana.getLatestBlockhash()),
+      this.data.config.cache.solana.getLatestBlockhash.ttl,
+    )
   }
 
   async getMinimumRentExemptionBalance(
-    environment: string,
-    index: number,
+    appKey: string,
     { dataLength }: MinimumRentExemptionBalanceRequest,
   ): Promise<MinimumRentExemptionBalanceResponse> {
-    const solana = await this.data.getSolanaConnection(environment, index)
+    const solana = await this.solana.getConnection(appKey)
     const lamports = await solana.getMinimumBalanceForRentExemption(dataLength)
 
     return { lamports } as MinimumRentExemptionBalanceResponse
@@ -178,13 +186,14 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     const found = appEnv.mints.find(({ mint }) => mint.address === inputMint)
     if (!found) {
       this.makeTransferMintNotFoundErrorCounter.add(1, { appKey, mint: inputMint.toString() })
-      throw new Error(`${appKey}: Can't find mint ${inputMint}`)
+      throw new BadRequestException(`${appKey}: Can't find mint ${inputMint}`)
     }
     return found
   }
 
   async makeTransfer(req: Request, input: MakeTransferRequest): Promise<TransactionWithErrors> {
-    const { appEnv, appKey } = await this.data.getAppEnvironment(input.environment, input.index)
+    const appKey = getAppKey(input.environment, input.index)
+    const appEnv = await this.data.getAppEnvironmentByAppKey(appKey)
     this.makeTransferRequestCounter.add(1, { appKey })
 
     const { ip, ua } = this.validateRequest(appEnv, req)
@@ -203,7 +212,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     })
 
     // Process the Solana transaction
-    const signer = Keypair.fromSecretKey(mint.wallet?.secretKey)
+    const signer = Keypair.fromSecret(mint.wallet?.secretKey)
 
     const {
       amount,
@@ -235,8 +244,8 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     })
   }
 
-  async getTransaction(environment: string, index: number, signature: string): Promise<GetTransactionResponse> {
-    const solana = await this.data.getSolanaConnection(environment, index)
+  async getTransaction(appKey: string, signature: string): Promise<GetTransactionResponse> {
+    const solana = await this.solana.getConnection(appKey)
 
     return solana.getTransaction(signature)
   }
@@ -260,7 +269,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     appEnv: AppEnv & { app: App }
     appKey: string
     transaction: Transaction
-    amount?: number
+    amount?: bigint
     blockhash: string
     commitment: Commitment
     decimals: number
@@ -272,13 +281,11 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     source: string
     solanaTransaction: SolanaTransaction
   }): Promise<TransactionWithErrors> {
-    const environment = appEnv.name
-    const index = appEnv.app.index
-    const solana = await this.data.getSolanaConnection(environment, index)
+    const solana = await this.solana.getConnection(appKey)
 
     // Update Transaction
     const updatedTransaction = await this.updateTransaction(transaction.id, {
-      amount: amount?.toString(),
+      amount: amount ? removeDecimals(amount.toString(), decimals)?.toString() : undefined,
       decimals,
       destination,
       feePayer,
@@ -314,6 +321,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
 
       this.confirmSignature({
         appEnv,
+        appKey,
         transactionId: transaction.id,
         blockhash,
         headers,
@@ -333,6 +341,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
 
   private async confirmSignature({
     appEnv,
+    appKey,
     transactionId,
     blockhash,
     headers,
@@ -342,6 +351,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     transactionStart,
   }: {
     appEnv: AppEnv & { app: App }
+    appKey: string
     transactionId: string
     blockhash: string
     headers?: Record<string, string>
@@ -350,10 +360,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     solanaStart: Date
     transactionStart: Date
   }) {
-    const environment = appEnv.name
-    const index = appEnv.app.index
-    const appKey = this.data.getAppKey(environment, index)
-    const solana = await this.data.getSolanaConnection(environment, index)
+    const solana = await this.solana.getConnection(appKey)
     this.logger.verbose(`${appKey}: confirmSignature: confirming ${signature}`)
 
     const finalized = await solana.confirmTransaction(

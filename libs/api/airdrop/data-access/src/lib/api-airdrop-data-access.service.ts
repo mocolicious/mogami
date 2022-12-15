@@ -1,7 +1,9 @@
 import { Airdrop } from '@kin-kinetic/api/airdrop/util'
 import { ApiCoreDataAccessService } from '@kin-kinetic/api/core/data-access'
+import { getAppKey } from '@kin-kinetic/api/core/util'
+import { ApiSolanaDataAccessService } from '@kin-kinetic/api/solana/data-access'
 import { Commitment } from '@kin-kinetic/solana'
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { RequestAirdropRequest } from './dto/request-airdrop-request.dto'
 import { RequestAirdropResponse } from './entity/request-airdrop-response.entity'
 
@@ -10,29 +12,29 @@ export class ApiAirdropDataAccessService {
   private readonly airdrop = new Map<string, Airdrop>()
   private readonly logger = new Logger(ApiAirdropDataAccessService.name)
 
-  constructor(private readonly data: ApiCoreDataAccessService) {}
+  constructor(private readonly data: ApiCoreDataAccessService, private readonly solana: ApiSolanaDataAccessService) {}
 
-  async requestAirdrop(request: RequestAirdropRequest): Promise<RequestAirdropResponse> {
-    const { environment, index } = request
-    const solana = await this.data.getSolanaConnection(environment, index)
-    const appEnv = await this.data.getAppByEnvironmentIndex(environment, index)
+  async requestAirdrop(input: RequestAirdropRequest): Promise<RequestAirdropResponse> {
+    const appKey = getAppKey(input.environment, input.index)
+    const appEnv = await this.data.getAppEnvironmentByAppKey(appKey)
+    const solana = await this.solana.getConnection(appKey)
 
     // Make sure the requested mint is enabled for this app
-    const appMint = appEnv.mints.find((mint) => mint.mint.address === request.mint)
+    const appMint = appEnv.mints.find((mint) => mint.mint.address === input.mint)
     if (!appMint) {
-      throw new Error(`Can't find mint ${request.mint} in environment ${environment} for index ${index}`)
+      throw new BadRequestException(`Can't find mint ${input.mint} in app ${appKey}`)
     }
     const mint = appMint.mint
 
     // Make sure there is an airdrop config for this mint
-    const airdropConfig = this.data.airdropConfig.get(mint.id)
+    const airdropConfig = this.data.getAirdropConfig(mint, appEnv.cluster)
     if (!airdropConfig) {
-      throw new HttpException(`Airdrop configuration not found.`, HttpStatus.BAD_REQUEST)
+      throw new BadRequestException(`Airdrop configuration not found.`)
     }
 
     // Make sure there is an Airdrop configured with a Solana connection
     if (!this.airdrop.get(mint.id)) {
-      this.logger.verbose(`Creating airdrop for ${mint.symbol} (${mint.address}) on ${environment}`)
+      this.logger.verbose(`Creating airdrop for ${mint.symbol} (${mint.address}) in app ${appKey}`)
       this.airdrop.set(
         mint.id,
         new Airdrop({
@@ -43,10 +45,10 @@ export class ApiAirdropDataAccessService {
     }
 
     try {
-      const commitment = request.commitment || Commitment.Finalized
-      const account = request.account
-      const amount = request.amount ? request.amount : 1
-      this.logger.verbose(`Requesting airdrop: ${account} ${amount} ${mint.symbol} (${mint.address}) on ${environment}`)
+      const commitment = input.commitment || Commitment.Confirmed
+      const account = input.account
+      const amount = input.amount ? input.amount : 1
+      this.logger.verbose(`Requesting airdrop: ${account} ${amount} ${mint.symbol} (${mint.address}) in app ${appKey}`)
       const result = await this.airdrop.get(mint.id).airdrop(account, amount, commitment)
 
       return {
@@ -54,7 +56,7 @@ export class ApiAirdropDataAccessService {
       }
     } catch (error) {
       this.logger.error(error)
-      throw new HttpException(`${error}`, HttpStatus.BAD_REQUEST)
+      throw error
     }
   }
 }

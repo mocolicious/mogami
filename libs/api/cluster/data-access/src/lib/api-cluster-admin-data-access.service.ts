@@ -1,5 +1,8 @@
 import { ApiCoreDataAccessService } from '@kin-kinetic/api/core/data-access'
-import { BadRequestException, Injectable } from '@nestjs/common'
+import { getAppKey } from '@kin-kinetic/api/core/util'
+import { ApiSolanaDataAccessService } from '@kin-kinetic/api/solana/data-access'
+import { Keypair } from '@kin-kinetic/keypair'
+import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { MintType, Prisma } from '@prisma/client'
 import { AdminClusterCreateInput } from './dto/admin-cluster-create.input'
 import { AdminClusterUpdateInput } from './dto/admin-cluster-update.input'
@@ -8,7 +11,8 @@ import { ClusterStatus } from './entity/cluster-status.enum'
 
 @Injectable()
 export class ApiClusterAdminDataAccessService {
-  constructor(private readonly data: ApiCoreDataAccessService) {}
+  private readonly logger = new Logger(ApiClusterAdminDataAccessService.name)
+  constructor(private readonly data: ApiCoreDataAccessService, private readonly solana: ApiSolanaDataAccessService) {}
 
   async adminCreateCluster(userId: string, data: AdminClusterCreateInput) {
     await this.data.ensureAdminUser(userId)
@@ -21,26 +25,62 @@ export class ApiClusterAdminDataAccessService {
   }
 
   async adminDeleteCluster(userId: string, clusterId: string) {
-    await this.data.ensureAdminUser(userId)
-    return this.data.cluster.delete({ where: { id: clusterId } })
+    const cluster = await this.adminCluster(userId, clusterId)
+
+    if (cluster.envs.length > 0) {
+      throw new BadRequestException('Cluster has apps deployed')
+    }
+    if (cluster.mints.length > 0) {
+      await this.data.mint
+        .deleteMany({
+          where: {
+            clusterId: cluster.id,
+          },
+        })
+        .then(() => {
+          this.logger.log(`Deleted ${cluster.mints.length} mints for cluster ${cluster.id}`)
+        })
+    }
+
+    return this.data.cluster.delete({ where: { id: clusterId } }).then((res) => {
+      this.logger.log(`Deleted cluster ${clusterId}`)
+      return res
+    })
   }
 
   async adminClusters(userId: string) {
     await this.data.ensureAdminUser(userId)
     return this.data.cluster.findMany({
-      include: { mints: true },
+      include: {
+        envs: { include: { app: true } },
+        mints: true,
+      },
       orderBy: { name: 'asc' },
     })
   }
 
   async adminCluster(userId: string, clusterId: string) {
     await this.data.ensureAdminUser(userId)
-    return this.data.cluster.findUnique({ where: { id: clusterId }, include: { mints: { orderBy: { order: 'asc' } } } })
+    return this.data.cluster.findUnique({
+      where: { id: clusterId },
+      include: {
+        envs: { include: { app: true } },
+        mints: { orderBy: { order: 'asc' } },
+      },
+    })
   }
 
   async adminUpdateCluster(userId: string, clusterId: string, data: AdminClusterUpdateInput) {
     await this.data.ensureAdminUser(userId)
-    return this.data.cluster.update({ where: { id: clusterId }, data })
+    const updated = await this.data.cluster.update({ where: { id: clusterId }, data })
+    const envs = await this.data.appEnv.findMany({
+      where: { clusterId: updated.id },
+      include: { app: true },
+    })
+    for (const env of envs) {
+      this.solana.deleteConnection(getAppKey(env.name, env.app.index))
+    }
+    return updated
   }
 
   async adminMintCreate(userId: string, input: AdminMintCreateInput) {
@@ -59,6 +99,7 @@ export class ApiClusterAdminDataAccessService {
       address: input.address,
       coinGeckoId: input.coinGeckoId,
       decimals: input.decimals,
+      default: cluster.mints?.length === 0,
       logoUrl: input.logoUrl,
       name: input.name,
       order,
@@ -71,5 +112,40 @@ export class ApiClusterAdminDataAccessService {
       where: { id: cluster.id },
       include: { mints: true },
     })
+  }
+
+  async adminDeleteMint(userId: string, mintId: string) {
+    await this.data.ensureAdminUser(userId)
+    const found = await this.data.mint.findUnique({ where: { id: mintId }, include: { cluster: true, appMints: true } })
+
+    if (!found) {
+      throw new BadRequestException('Mint not found')
+    }
+
+    if (found.appMints?.length) {
+      throw new BadRequestException('Mint is in use by an app')
+    }
+
+    return this.data.mint.delete({ where: { id: mintId } }).then((res) => {
+      this.logger.log(`Deleted mint ${mintId}`)
+      return res
+    })
+  }
+
+  async adminMintImportWallet(userId: string, mintId: string, secret: string) {
+    await this.data.ensureAdminUser(userId)
+
+    try {
+      const { secretKey } = Keypair.fromSecret(secret)
+
+      return this.data.mint.update({
+        where: { id: mintId },
+        data: {
+          airdropSecretKey: secretKey,
+        },
+      })
+    } catch (e) {
+      throw new BadRequestException(`Error importing wallet`)
+    }
   }
 }

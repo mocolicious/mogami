@@ -1,10 +1,19 @@
 import { Solana } from '@kin-kinetic/solana'
-import { AppConfig, Transaction, BalanceResponse, GetTransactionResponse, HistoryResponse } from '../generated'
+import {
+  AccountInfo,
+  AppConfig,
+  BalanceResponse,
+  GetTransactionResponse,
+  HistoryResponse,
+  Transaction,
+} from '../generated'
 import { NAME, VERSION } from '../version'
 import { getSolanaRpcEndpoint } from './helpers'
 import { validateKineticSdkConfig } from './helpers/validate-kinetic-sdk-config'
 import {
+  CloseAccountOptions,
   CreateAccountOptions,
+  GetAccountInfoOptions,
   GetBalanceOptions,
   GetHistoryOptions,
   GetTokenAccountsOptions,
@@ -38,8 +47,16 @@ export class KineticSdk {
     return this.sdkConfig.solanaRpcEndpoint
   }
 
+  closeAccount(options: CloseAccountOptions): Promise<Transaction> {
+    return this.internal.closeAccount(options)
+  }
+
   createAccount(options: CreateAccountOptions): Promise<Transaction> {
     return this.internal.createAccount(options)
+  }
+
+  getAccountInfo(option: GetAccountInfoOptions): Promise<AccountInfo> {
+    return this.internal.getAccountInfo(option)
   }
 
   getBalance(option: GetBalanceOptions): Promise<BalanceResponse> {
@@ -88,7 +105,8 @@ export class KineticSdk {
       )
       return config
     } catch (e) {
-      this.sdkConfig?.logger?.error(`Error initializing Server.`)
+      console.error(`${NAME}: Error initializing SDK: ${e}`)
+      this.sdkConfig?.logger?.error(`Error initializing Server: ${e}`)
       throw new Error(`Error initializing Server.`)
     }
   }
@@ -96,9 +114,12 @@ export class KineticSdk {
   static async setup(config: KineticSdkConfig): Promise<KineticSdk> {
     const sdk = new KineticSdk(validateKineticSdkConfig(config))
     try {
-      await sdk.init().then(() => config.logger?.log(`${NAME}: Setup done.`))
-      return sdk
+      return sdk.init().then(() => {
+        config.logger?.log(`${NAME}: Setup done.`)
+        return sdk
+      })
     } catch (e) {
+      console.error(`${NAME}: Error setting up Kinetic SDK: ${e}`)
       config.logger?.error(`${NAME}: Error setting up SDK.`, e)
       throw new Error(`${NAME}: Error setting up SDK.`)
     }
