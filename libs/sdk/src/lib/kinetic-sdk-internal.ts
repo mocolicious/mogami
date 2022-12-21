@@ -1,5 +1,4 @@
 import {
-  Commitment,
   generateCreateAccountTransaction,
   generateMakeTransferBatchTransaction,
   generateMakeTransferTransaction,
@@ -15,6 +14,7 @@ import {
   AppConfigMint,
   BalanceResponse,
   CloseAccountRequest,
+  Commitment,
   Configuration,
   CreateAccountRequest,
   HistoryResponse,
@@ -63,9 +63,8 @@ export class KineticSdkInternal {
 
   async closeAccount(options: CloseAccountOptions): Promise<Transaction> {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
-
-    const commitment = options.commitment || Commitment.Confirmed
 
     const request: CloseAccountRequest = {
       account: options.account.toString(),
@@ -87,14 +86,13 @@ export class KineticSdkInternal {
 
   async createAccount(options: CreateAccountOptions): Promise<Transaction> {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
 
     const accounts = await this.getTokenAccounts({ account: options.owner.publicKey, mint: mint.publicKey })
     if (accounts?.length) {
       throw new Error(`Owner ${options.owner.publicKey} already has an account for mint ${mint.publicKey}.`)
     }
-
-    const commitment = options.commitment || Commitment.Confirmed
 
     const { blockhash, lastValidBlockHeight } = await this.getBlockhash()
 
@@ -128,8 +126,9 @@ export class KineticSdkInternal {
   }
 
   getAccountInfo(options: GetAccountInfoOptions) {
+    const commitment = this.getCommitment(options.commitment)
     return this.accountApi
-      .getAccountInfo(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString())
+      .getAccountInfo(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), commitment)
       .then((res) => res.data)
   }
 
@@ -147,7 +146,7 @@ export class KineticSdkInternal {
   }
 
   async getBalance(options: GetBalanceOptions): Promise<BalanceResponse> {
-    const commitment = options.commitment || Commitment.Finalized
+    const commitment = this.getCommitment(options.commitment)
     return this.accountApi
       .getBalance(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), commitment)
       .then((res) => res.data)
@@ -158,10 +157,17 @@ export class KineticSdkInternal {
 
   getHistory(options: GetHistoryOptions): Promise<HistoryResponse[]> {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
 
     return this.accountApi
-      .getHistory(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), mint.publicKey)
+      .getHistory(
+        this.sdkConfig.environment,
+        this.sdkConfig.index,
+        options.account.toString(),
+        mint.publicKey,
+        commitment,
+      )
       .then((res) => res.data)
       .catch((err) => {
         throw new Error(err?.response?.data?.message ?? 'Unknown error')
@@ -170,10 +176,17 @@ export class KineticSdkInternal {
 
   getTokenAccounts(options: GetTokenAccountsOptions): Promise<string[]> {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
 
     return this.accountApi
-      .getTokenAccounts(this.sdkConfig.environment, this.sdkConfig.index, options.account.toString(), mint.publicKey)
+      .getTokenAccounts(
+        this.sdkConfig.environment,
+        this.sdkConfig.index,
+        options.account.toString(),
+        mint.publicKey,
+        commitment,
+      )
       .then((res) => res.data)
       .catch((err) => {
         throw new Error(err?.response?.data?.message ?? 'Unknown error')
@@ -181,8 +194,10 @@ export class KineticSdkInternal {
   }
 
   getTransaction(options: GetTransactionOptions) {
+    const commitment = this.getCommitment(options.commitment)
+
     return this.transactionApi
-      .getTransaction(this.sdkConfig.environment, this.sdkConfig.index, options.signature)
+      .getTransaction(this.sdkConfig.environment, this.sdkConfig.index, options.signature, commitment)
       .then((res) => res.data)
       .catch((err) => {
         throw new Error(err?.response?.data?.message ?? 'Unknown error')
@@ -191,9 +206,9 @@ export class KineticSdkInternal {
 
   async makeTransfer(options: MakeTransferOptions) {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
 
-    const commitment = options.commitment || Commitment.Confirmed
     const destination = options.destination.toString()
     const senderCreate = options.senderCreate || false
 
@@ -238,9 +253,9 @@ export class KineticSdkInternal {
 
   async makeTransferBatch(options: MakeTransferBatchOptions) {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
 
-    const commitment = options.commitment || Commitment.Confirmed
     const destinations = options.destinations
     const referenceId = options.referenceId || null
     const referenceType = options.referenceType || null
@@ -278,13 +293,14 @@ export class KineticSdkInternal {
 
   requestAirdrop(options: RequestAirdropOptions): Promise<RequestAirdropResponse> {
     const appConfig = this.ensureAppConfig()
+    const commitment = this.getCommitment(options.commitment)
     const mint = this.getAppMint(appConfig, options.mint?.toString())
 
     return this.airdropApi
       .requestAirdrop({
         account: options.account?.toString(),
         amount: options.amount,
-        commitment: options.commitment || Commitment.Finalized,
+        commitment,
         environment: this.sdkConfig.environment,
         index: this.sdkConfig.index,
         mint: mint.publicKey,
@@ -331,6 +347,10 @@ export class KineticSdkInternal {
       .then((res) => res.data)
 
     return { blockhash, lastValidBlockHeight }
+  }
+
+  private getCommitment(commitment?: Commitment): Commitment {
+    return commitment || this.sdkConfig.commitment || Commitment.Confirmed
   }
 
   private makeTransferRequest(request: MakeTransferRequest) {

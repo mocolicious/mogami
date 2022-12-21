@@ -52,5 +52,3 @@ stages:
         additionalImageTags: $(Build.BuildId)
         includeSourceTags: true
         includeLatestTag: true
-
-        

@@ -23,6 +23,7 @@ export type Scalars = {
 }
 
 export type AdminAppCreateInput = {
+  enableWebhooks?: InputMaybe<Scalars['Boolean']>
   index: Scalars['Int']
   logoUrl?: InputMaybe<Scalars['String']>
   name: Scalars['String']
@@ -111,6 +112,8 @@ export type AppEnv = {
   key?: Maybe<Scalars['String']>
   mints?: Maybe<Array<AppMint>>
   name?: Maybe<Scalars['String']>
+  solanaTransactionMaxRetries?: Maybe<Scalars['Int']>
+  solanaTransactionSkipPreflight?: Maybe<Scalars['Boolean']>
   uasAllowed?: Maybe<Array<Scalars['String']>>
   uasBlocked?: Maybe<Array<Scalars['String']>>
   updatedAt: Scalars['DateTime']
@@ -768,6 +771,8 @@ export type UserAppEnvCreateInput = {
 }
 
 export type UserAppEnvUpdateInput = {
+  solanaTransactionMaxRetries?: InputMaybe<Scalars['Int']>
+  solanaTransactionSkipPreflight?: InputMaybe<Scalars['Boolean']>
   webhookBalanceEnabled?: InputMaybe<Scalars['Boolean']>
   webhookBalanceThreshold?: InputMaybe<Scalars['String']>
   webhookBalanceUrl?: InputMaybe<Scalars['String']>
@@ -947,6 +952,8 @@ export type AdminCreateAppMutation = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -1105,6 +1112,8 @@ export type AdminUpdateAppMutation = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -1272,6 +1281,8 @@ export type AdminDeleteAppEnvMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -1388,6 +1399,8 @@ export type AdminAppsQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -1507,6 +1520,8 @@ export type AdminAppQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -1660,6 +1675,8 @@ export type AppEnvDetailsFragment = {
   ipsAllowed?: Array<string> | null
   ipsBlocked?: Array<string> | null
   name?: string | null
+  solanaTransactionMaxRetries?: number | null
+  solanaTransactionSkipPreflight?: boolean | null
   uasAllowed?: Array<string> | null
   uasBlocked?: Array<string> | null
   webhookBalanceEnabled?: boolean | null
@@ -2004,6 +2021,8 @@ export type UserUpdateAppMutation = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -2152,6 +2171,8 @@ export type UserCreateAppEnvMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -2269,6 +2290,8 @@ export type UserUpdateAppEnvMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -2584,6 +2607,8 @@ export type UserAppEnvAddAllowedIpMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -2692,6 +2717,8 @@ export type UserAppEnvRemoveAllowedIpMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -2800,6 +2827,8 @@ export type UserAppEnvAddBlockedIpMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -2908,6 +2937,8 @@ export type UserAppEnvRemoveBlockedIpMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3016,6 +3047,8 @@ export type UserAppEnvAddAllowedUaMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3124,6 +3157,8 @@ export type UserAppEnvRemoveAllowedUaMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3232,6 +3267,8 @@ export type UserAppEnvAddBlockedUaMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3340,6 +3377,8 @@ export type UserAppEnvRemoveBlockedUaMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3448,6 +3487,8 @@ export type UserAppEnvPurgeTransactionsMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3557,6 +3598,8 @@ export type UserAppEnvMintDisableMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3666,6 +3709,8 @@ export type UserAppEnvMintEnableMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3776,6 +3821,8 @@ export type UserAppEnvMintSetWalletMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -3885,6 +3932,8 @@ export type UserAppEnvWalletAddMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -4002,6 +4051,8 @@ export type UserAppEnvWalletRemoveMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -4118,6 +4169,8 @@ export type UserDeleteAppEnvMutation = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -4449,6 +4502,8 @@ export type UserAppsQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -4569,6 +4624,8 @@ export type UserAppQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -4716,6 +4773,8 @@ export type UserAppEnvQuery = {
     ipsAllowed?: Array<string> | null
     ipsBlocked?: Array<string> | null
     name?: string | null
+    solanaTransactionMaxRetries?: number | null
+    solanaTransactionSkipPreflight?: boolean | null
     uasAllowed?: Array<string> | null
     uasBlocked?: Array<string> | null
     webhookBalanceEnabled?: boolean | null
@@ -5132,6 +5191,8 @@ export type AdminClustersQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -5723,6 +5784,8 @@ export type AdminWalletQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -5871,6 +5934,8 @@ export type AdminWalletsQuery = {
         ipsAllowed?: Array<string> | null
         ipsBlocked?: Array<string> | null
         name?: string | null
+        solanaTransactionMaxRetries?: number | null
+        solanaTransactionSkipPreflight?: boolean | null
         uasAllowed?: Array<string> | null
         uasBlocked?: Array<string> | null
         webhookBalanceEnabled?: boolean | null
@@ -5971,6 +6036,8 @@ export type AdminWalletsQuery = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -6097,6 +6164,8 @@ export type UserGenerateWalletMutation = {
       ipsAllowed?: Array<string> | null
       ipsBlocked?: Array<string> | null
       name?: string | null
+      solanaTransactionMaxRetries?: number | null
+      solanaTransactionSkipPreflight?: boolean | null
       uasAllowed?: Array<string> | null
       uasBlocked?: Array<string> | null
       webhookBalanceEnabled?: boolean | null
@@ -6460,6 +6529,8 @@ export const AppEnvDetailsFragmentDoc = gql`
       ...AppMintDetails
     }
     name
+    solanaTransactionMaxRetries
+    solanaTransactionSkipPreflight
     uasAllowed
     uasBlocked
     webhookBalanceEnabled

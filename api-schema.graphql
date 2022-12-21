@@ -3,6 +3,7 @@
 # ------------------------------------------------------
 
 input AdminAppCreateInput {
+  enableWebhooks: Boolean
   index: Int!
   logoUrl: String
   name: String!
@@ -89,6 +90,8 @@ type AppEnv {
   key: String
   mints: [AppMint!]
   name: String
+  solanaTransactionMaxRetries: Int
+  solanaTransactionSkipPreflight: Boolean
   uasAllowed: [String!]
   uasBlocked: [String!]
   updatedAt: DateTime!
@@ -427,6 +430,8 @@ input UserAppEnvCreateInput {
 }
 
 input UserAppEnvUpdateInput {
+  solanaTransactionMaxRetries: Int
+  solanaTransactionSkipPreflight: Boolean
   webhookBalanceEnabled: Boolean
   webhookBalanceThreshold: String
   webhookBalanceUrl: String

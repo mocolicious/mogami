@@ -244,10 +244,10 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     })
   }
 
-  async getTransaction(appKey: string, signature: string): Promise<GetTransactionResponse> {
+  async getTransaction(appKey: string, signature: string, commitment: Commitment): Promise<GetTransactionResponse> {
     const solana = await this.solana.getConnection(appKey)
 
-    return solana.getTransaction(signature)
+    return solana.getTransaction(signature, commitment)
   }
 
   async handleTransaction({
@@ -298,13 +298,28 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     if (appEnv.webhookVerifyEnabled && appEnv.webhookVerifyUrl) {
       const verifiedTransaction = await this.sendVerifyWebhook(appKey, appEnv, updatedTransaction, headers)
       if (verifiedTransaction.status === TransactionStatus.Failed) {
+        this.logger.error(
+          `Transaction ${updatedTransaction.id} sendVerifyWebhook failed:${verifiedTransaction.errors
+            .map((e) => e.message)
+            .join(', ')}`,
+          verifiedTransaction.errors,
+        )
         return verifiedTransaction
       }
     }
 
     // Solana Transaction
-    const sent = await this.sendSolanaTransaction(appKey, transaction.id, solana, solanaTransaction)
+    const sent = await this.sendSolanaTransaction(appKey, transaction.id, solana, solanaTransaction, {
+      maxRetries: appEnv.solanaTransactionMaxRetries ?? 0,
+      skipPreflight: appEnv.solanaTransactionSkipPreflight ?? false,
+    })
     if (sent.status === TransactionStatus.Failed) {
+      this.logger.error(
+        `Transaction ${updatedTransaction.id} sendSolanaTransaction failed:${sent.errors
+          .map((e) => e.message)
+          .join(', ')}`,
+        sent.errors,
+      )
       return sent
     }
 
@@ -332,6 +347,12 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
       })
 
       if (confirmedTransaction.status === TransactionStatus.Failed) {
+        this.logger.error(
+          `Transaction ${updatedTransaction.id} confirmTransaction failed:${confirmedTransaction.errors
+            .map((e) => e.message)
+            .join(', ')}`,
+          confirmedTransaction.errors,
+        )
         return confirmedTransaction
       }
     }
@@ -386,8 +407,18 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
       })
       this.confirmSignatureFinalizedCounter.add(1, { appKey })
       // Send Event Webhook
-      if (appEnv.webhookEventEnabled && appEnv.webhookEventUrl) {
+      if (appEnv.webhookEventEnabled && appEnv.webhookEventUrl && transaction) {
         return this.sendEventWebhook(appKey, appEnv, transaction, headers)
+        const eventWebhookTransaction = await this.sendEventWebhook(appKey, appEnv, transaction, headers)
+        if (eventWebhookTransaction.status === TransactionStatus.Failed) {
+          this.logger.error(
+            `Transaction ${transaction.id} sendEventWebhook failed:${eventWebhookTransaction.errors
+              .map((e) => e.message)
+              .join(', ')}`,
+            eventWebhookTransaction.errors,
+          )
+          return eventWebhookTransaction
+        }
       }
 
       this.logger.verbose(`${appKey}: confirmSignature: finished ${signature}`)
@@ -414,7 +445,11 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
       return this.handleTransactionError(
         transaction.id,
         { webhookEventStart, webhookEventEnd, webhookEventDuration },
-        parseError(err.response?.data?.message, TransactionErrorType.WebhookFailed),
+        {
+          type: TransactionErrorType.WebhookFailed,
+          logs: [err.toString()],
+          message: ` ${err.response?.data?.message ?? err.toString() ?? 'Unknown error'}`,
+        },
       )
     }
   }
@@ -439,7 +474,11 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
       return this.handleTransactionError(
         transaction.id,
         { webhookVerifyStart, webhookVerifyEnd, webhookVerifyDuration },
-        parseError(err?.response?.data?.message, TransactionErrorType.WebhookFailed),
+        {
+          type: TransactionErrorType.WebhookFailed,
+          logs: [err.toString()],
+          message: ` ${err.response?.data?.message ?? err.toString() ?? 'Unknown error'}`,
+        },
       )
     }
   }
@@ -449,10 +488,11 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     transactionId: string,
     solana: Solana,
     solanaTransaction: SolanaTransaction,
+    { maxRetries, skipPreflight }: { maxRetries: number; skipPreflight: boolean },
   ): Promise<TransactionWithErrors> {
     const solanaStart = new Date()
     try {
-      const signature = await solana.sendRawTransaction(solanaTransaction)
+      const signature = await solana.sendRawTransaction(solanaTransaction, { maxRetries, skipPreflight })
       const status = TransactionStatus.Committed
       const solanaCommitted = new Date()
       const solanaCommittedDuration = solanaCommitted.getTime() - solanaStart.getTime()
