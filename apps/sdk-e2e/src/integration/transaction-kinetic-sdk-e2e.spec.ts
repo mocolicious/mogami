@@ -17,8 +17,8 @@ describe('KineticSdk (e2e)', () => {
     expect(tx).not.toBeNull()
     expect(tx.mint).toEqual(DEFAULT_MINT)
     const { signature, errors, amount, decimals, source } = tx
-    expect(typeof signature).toBe('string')
     expect(errors).toEqual([])
+    expect(typeof signature).toBe('string')
     expect(amount).toBe('43')
     expect(decimals).toBe(5)
     expect(source).toBe(aliceKeypair.publicKey)
@@ -29,11 +29,19 @@ describe('KineticSdk (e2e)', () => {
     expect(tx).not.toBeNull()
     expect(tx.mint).toEqual(DEFAULT_MINT)
     const { signature, errors, amount, decimals, source } = tx
-    expect(typeof signature).toBe('string')
     expect(errors).toEqual([])
+    expect(typeof signature).toBe('string')
     expect(amount).toBe('43.12345')
     expect(decimals).toBe(5)
     expect(source).toBe(aliceKeypair.publicKey)
+  })
+
+  it('should fail to make a transfer with a new account', async () => {
+    const kp = Keypair.random()
+
+    await expect(
+      async () => await sdk.makeTransfer({ amount: '43.12345', destination: bobKeypair.publicKey, owner: kp }),
+    ).rejects.toThrow(`Owner account doesn't exist for mint ${DEFAULT_MINT}`)
   })
 
   it('should make a transfer in batch', async () => {
@@ -47,8 +55,8 @@ describe('KineticSdk (e2e)', () => {
     expect(tx).not.toBeNull()
     expect(tx.mint).toEqual(DEFAULT_MINT)
     const { signature, errors, amount, decimals, source } = tx
-    expect(typeof signature).toBe('string')
     expect(errors).toEqual([])
+    expect(typeof signature).toBe('string')
     expect(amount).toBe('51')
     expect(decimals).toBe(5)
     expect(source).toBe(aliceKeypair.publicKey)
@@ -76,21 +84,15 @@ describe('KineticSdk (e2e)', () => {
 
   it('should fail when one account does not exist in batch transfer', async () => {
     const kp = Keypair.random()
+    const kp2 = Keypair.random()
     const destinations: Destination[] = []
     destinations.push({ destination: bobKeypair.publicKey, amount: '15' })
     destinations.push({ destination: kp.publicKey, amount: '12' })
+    destinations.push({ destination: kp2.publicKey, amount: '12' })
 
-    const transferTx = await sdk.makeTransferBatch({ destinations, owner: aliceKeypair })
-
-    expect(transferTx).not.toBeNull()
-    expect(transferTx.mint).toEqual(DEFAULT_MINT)
-
-    const { signature, errors, tx } = transferTx
-    expect(signature).toBeNull()
-    expect(tx).toBeDefined()
-    expect(errors.length).toBeGreaterThan(0)
-    expect(errors[0].type).toEqual('InvalidAccount')
-    expect(errors[0].instruction).toEqual(2)
+    await expect(async () => await sdk.makeTransferBatch({ destinations, owner: aliceKeypair })).rejects.toThrow(
+      `Destination accounts ${kp.publicKey}, ${kp2.publicKey} have no token account for mint ${DEFAULT_MINT}.`,
+    )
   })
 
   it('should throw when insufficient funds in a transaction', async () => {
@@ -109,8 +111,7 @@ describe('KineticSdk (e2e)', () => {
   it('should throw when insufficient funds in a batch transaction', async () => {
     const destinations: Destination[] = []
     destinations.push({ destination: bobKeypair.publicKey, amount: '15' })
-    const kp = Keypair.random()
-    destinations.push({ destination: kp.publicKey, amount: '99999999999999' })
+    destinations.push({ destination: daveKeypair.publicKey, amount: '99999999999999' })
     const res = await sdk.makeTransferBatch({ destinations, owner: aliceKeypair })
     expect(res.amount).toBe('15')
     expect(res.decimals).toBe(5)
@@ -130,8 +131,8 @@ describe('KineticSdk (e2e)', () => {
     })
     expect(tx).not.toBeNull()
     const { signature, errors, amount, decimals, source } = tx
-    expect(typeof signature).toBe('string')
     expect(errors).toEqual([])
+    expect(typeof signature).toBe('string')
     expect(amount).toBe('43')
     expect(decimals).toBe(5)
     expect(source).toBe(aliceKeypair.publicKey)
@@ -147,7 +148,7 @@ describe('KineticSdk (e2e)', () => {
           owner: aliceKeypair,
           senderCreate: false,
         }),
-    ).rejects.toThrow(`Destination account doesn't exist.`)
+    ).rejects.toThrow(`Destination account doesn't exist for mint ${DEFAULT_MINT}.`)
   })
 
   it('should not allow transfers to a mint', async () => {
@@ -160,7 +161,7 @@ describe('KineticSdk (e2e)', () => {
           owner: aliceKeypair,
           senderCreate: false,
         }),
-    ).rejects.toThrow('Transfers to a mint are not allowed.')
+    ).rejects.toThrow('Account is a mint account.')
   })
 
   it('should not allow transfers to a mint in batch transfer', async () => {
@@ -170,7 +171,7 @@ describe('KineticSdk (e2e)', () => {
     destinations.push({ destination: kinMint, amount: '12' })
 
     await expect(async () => await sdk.makeTransferBatch({ destinations, owner: aliceKeypair })).rejects.toThrow(
-      `Transfers to a mint are not allowed.`,
+      `Account is a mint account.`,
     )
   })
 
@@ -185,8 +186,8 @@ describe('KineticSdk (e2e)', () => {
     expect(tx).not.toBeNull()
     expect(tx.mint).toBe(usdcMint)
     const { signature, errors, amount, decimals, source } = tx
-    expect(typeof signature).toBe('string')
     expect(errors).toEqual([])
+    expect(typeof signature).toBe('string')
     expect(amount).toBe('1.75')
     expect(decimals).toBe(2)
     expect(source).toBe(aliceKeypair.publicKey)
@@ -201,8 +202,8 @@ describe('KineticSdk (e2e)', () => {
     expect(tx).not.toBeNull()
     expect(usdcMint).toContain(tx.mint)
     const { signature, errors, amount, decimals, source } = tx
-    expect(typeof signature).toBe('string')
     expect(errors).toEqual([])
+    expect(typeof signature).toBe('string')
     expect(amount).toBe('2.22')
     expect(decimals).toBe(2)
     expect(source).toBe(aliceKeypair.publicKey)
