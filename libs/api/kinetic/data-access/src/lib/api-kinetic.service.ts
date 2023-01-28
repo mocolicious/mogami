@@ -33,6 +33,7 @@ import { HistoryResponse } from './entities/history-response.entity'
 import { LatestBlockhashResponse } from './entities/latest-blockhash-response.entity'
 import { MinimumRentExemptionBalanceRequest } from './entities/minimum-rent-exemption-balance-request.dto'
 import { MinimumRentExemptionBalanceResponse } from './entities/minimum-rent-exemption-balance-response.entity'
+import { SignatureStatus } from './entities/signature-status.entity'
 import { validateCloseAccount } from './helpers/validate-close.account'
 import { ProcessTransactionOptions } from './interfaces/process-transaction-options'
 import { TransactionWithErrors } from './interfaces/transaction-with-errors'
@@ -200,6 +201,8 @@ export class ApiKineticService implements OnModuleInit {
     const isTokenAccount = parsed?.type === 'account'
 
     const owner = isTokenAccount ? parsed.info.owner : null
+    // There are situations where the owner of the token account is the same as the account
+    const tokenAccountIsOwner = account?.toString() === owner?.toString()
 
     const result = {
       account: account.toString(),
@@ -208,11 +211,12 @@ export class ApiKineticService implements OnModuleInit {
       isTokenAccount,
       owner,
       program: accountInfo?.owner?.toString() ?? null,
-      tokens: !isMint && !isTokenAccount ? [] : null,
+      tokens: isMint || (isTokenAccount && !tokenAccountIsOwner) ? null : [],
     }
 
-    // We only want to get the token accounts if the account is not a mint or token account
-    if (isMint || isTokenAccount) {
+    // We don't want to get the token accounts if the account is a mint or token account
+    // Unless the token account is the same as the owner.
+    if (isMint || (isTokenAccount && !tokenAccountIsOwner)) {
       return result
     }
 
@@ -422,6 +426,12 @@ export class ApiKineticService implements OnModuleInit {
       this.data.config.cache.solana.getTokenAccounts.ttl,
       (value) => !!value?.length,
     )
+  }
+
+  async getSignatureStatus(appKey: string, signature: string): Promise<SignatureStatus> {
+    const solana = await this.getSolanaConnection(appKey)
+
+    return solana.getSignatureStatus(signature)
   }
 
   async getTransaction(appKey: string, signature: string, commitment: Commitment): Promise<GetTransactionResponse> {
