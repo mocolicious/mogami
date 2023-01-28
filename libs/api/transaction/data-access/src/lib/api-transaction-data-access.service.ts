@@ -5,7 +5,7 @@ import { Keypair } from '@kin-kinetic/keypair'
 import { parseAndSignTokenTransfer } from '@kin-kinetic/solana'
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { Counter } from '@opentelemetry/api-metrics'
-import { Transaction, TransactionErrorType, TransactionStatus } from '@prisma/client'
+import { Prisma, Transaction, TransactionErrorType, TransactionStatus } from '@prisma/client'
 import { Request } from 'express'
 import { MakeTransferRequest } from './dto/make-transfer-request.dto'
 
@@ -24,7 +24,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
   async cleanupStaleTransactions() {
     const stale = await this.getExpiredTransactions()
     if (!stale.length) return
-    this.timeoutTransactions(stale.map((item) => item.id)).then((res) => {
+    this.timeoutTransactions(stale).then((res) => {
       this.logger.verbose(
         `cleanupStaleTransactions set ${stale?.length} stale transactions: ${res.map((item) => item.id)} `,
       )
@@ -32,7 +32,7 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
   }
 
   private getExpiredTransactions(): Promise<Transaction[]> {
-    const expiredMinutes = 5
+    const expiredMinutes = 1
     const expired = getExpiredTime(expiredMinutes)
     return this.data.transaction.findMany({
       where: {
@@ -42,29 +42,53 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
     })
   }
 
-  private timeoutTransactions(ids: string[]): Promise<Transaction[]> {
-    return Promise.all(ids.map((id) => this.timeoutTransaction(id)))
+  private timeoutTransactions(transactions: Transaction[]): Promise<Transaction[]> {
+    return Promise.all(transactions.map((transaction) => this.verifyTransaction(transaction)))
   }
 
-  private timeoutTransaction(id: string): Promise<Transaction> {
-    return this.data.transaction.update({
-      where: { id: id },
+  private async verifyTransaction(transaction: Transaction): Promise<Transaction> {
+    if (transaction?.appKey && transaction.signature) {
+      const appEnv = await this.data.getAppEnvironmentByAppKey(transaction.appKey)
+      const { blockhash, lastValidBlockHeight } = await this.kinetic.getLatestBlockhash(transaction.appKey)
+      const tx = await this.kinetic.confirmSignature({
+        appEnv,
+        appKey: transaction.appKey,
+        transactionId: transaction.id,
+        blockhash,
+        headers: transaction.headers as Record<string, string>,
+        lastValidBlockHeight,
+        signature: transaction.signature,
+        solanaStart: transaction.solanaStart,
+        transactionStart: transaction.createdAt,
+      })
+
+      if (tx?.status === 'Finalized') {
+        this.logger.verbose(`verifyTransaction: set ${transaction.id} to Finalized`)
+        return tx
+      }
+    }
+
+    const failed = await this.data.transaction.update({
+      where: { id: transaction.id },
       data: {
         status: TransactionStatus.Failed,
         errors: {
           create: {
             type: TransactionErrorType.Timeout,
-            message: `Transaction timed out`,
+            message: transaction.signature ? `Transaction timed out` : 'Transaction never signed',
           },
         },
       },
     })
+    this.logger.verbose(`verifyTransaction: set ${transaction.id} to Failed`)
+    return failed
   }
 
-  onModuleInit() {
+  async onModuleInit() {
     this.makeTransferRequestCounter = this.data.metrics.getCounter(`api_transaction_make_transfer_request_counter`, {
       description: 'Number of requests to makeTransfer',
     })
+    await this.migrateTransactionReferences()
   }
 
   async makeTransfer(req: Request, input: MakeTransferRequest): Promise<TransactionWithErrors> {
@@ -106,12 +130,52 @@ export class ApiTransactionDataAccessService implements OnModuleInit {
       lastValidBlockHeight: input?.lastValidBlockHeight,
       mintPublicKey: mint?.mint?.address,
       processingStartedAt,
-      referenceId: input?.referenceId,
-      referenceType: input?.referenceType,
+      reference: input?.reference,
       solanaTransaction,
       source,
       tx: input.tx,
       ua,
     })
+  }
+
+  // MIGRATION: This migration will be removed in v1.0.0
+  private async migrateTransactionReferences() {
+    const transactions = await this.data.transaction.findMany({
+      where: {
+        OR: [{ referenceId: { not: null } }, { referenceType: { not: null } }],
+      },
+    })
+
+    if (!transactions.length) {
+      this.logger.verbose('migrateTransactionReferences: no transactions to migrate')
+      return
+    }
+    this.logger.verbose(`migrateTransactionReferences: migrating ${transactions.length} transactions`)
+
+    const updates: { id: string; data: Prisma.TransactionUpdateInput }[] = transactions.map((tx) => {
+      let reference = null
+      if (tx.referenceId && tx.referenceType) {
+        reference = `${tx.referenceType}|${tx.referenceId}`
+      } else if (tx.referenceId && !tx.referenceType) {
+        reference = `${tx.referenceId}`
+      } else if (!tx.referenceId && tx.referenceType) {
+        reference = `${tx.referenceType}`
+      }
+      return {
+        id: tx.id,
+        data: { reference, referenceId: null, referenceType: null },
+      }
+    })
+
+    const updated = await Promise.all(
+      updates.map(async (update) => {
+        return this.data.transaction.update({
+          where: { id: update.id },
+          data: update.data,
+        })
+      }),
+    )
+
+    this.logger.verbose(`migrateTransactionReferences: updated ${updated.length} transactions`)
   }
 }

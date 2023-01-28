@@ -1,13 +1,14 @@
 import { ApiCoreDataAccessService, AppEnvironment } from '@kin-kinetic/api/core/data-access'
-import { parseAppKey } from '@kin-kinetic/api/core/util'
+import { ellipsify, parseAppKey } from '@kin-kinetic/api/core/util'
 import { parseTransactionError } from '@kin-kinetic/api/kinetic/util'
 import { ApiSolanaDataAccessService } from '@kin-kinetic/api/solana/data-access'
 import { ApiWebhookDataAccessService, WebhookType } from '@kin-kinetic/api/webhook/data-access'
 import { Keypair } from '@kin-kinetic/keypair'
 import {
+  BalanceMint,
   Commitment,
   generateCloseAccountTransaction,
-  getPublicKey,
+  MintAccounts,
   PublicKeyString,
   removeDecimals,
   Solana,
@@ -28,6 +29,7 @@ import * as requestIp from 'request-ip'
 import { CloseAccountRequest } from './dto/close-account-request.dto'
 import { AccountInfo } from './entities/account.info'
 import { GetTransactionResponse } from './entities/get-transaction-response.entity'
+import { HistoryResponse } from './entities/history-response.entity'
 import { LatestBlockhashResponse } from './entities/latest-blockhash-response.entity'
 import { MinimumRentExemptionBalanceRequest } from './entities/minimum-rent-exemption-balance-request.dto'
 import { MinimumRentExemptionBalanceResponse } from './entities/minimum-rent-exemption-balance-response.entity'
@@ -114,18 +116,82 @@ export class ApiKineticService implements OnModuleInit {
     })
   }
 
+  async confirmSignature({
+    appEnv,
+    appKey,
+    transactionId,
+    blockhash,
+    headers,
+    lastValidBlockHeight,
+    signature,
+    solanaStart,
+    transactionStart,
+  }: {
+    appEnv: AppEnv & { app: App }
+    appKey: string
+    transactionId: string
+    blockhash: string
+    headers?: Record<string, string>
+    lastValidBlockHeight: number
+    signature: string
+    solanaStart: Date
+    transactionStart: Date
+  }): Promise<Transaction | undefined> {
+    const solana = await this.solana.getConnection(appKey)
+    this.logger.verbose(`${appKey}: confirmSignature: confirming ${signature}`)
+
+    const finalized = await solana.confirmTransaction(
+      {
+        blockhash,
+        lastValidBlockHeight,
+        signature: signature as string,
+      },
+      Commitment.Finalized,
+    )
+    if (finalized) {
+      const solanaFinalized = new Date()
+      const solanaFinalizedDuration = solanaFinalized.getTime() - solanaStart.getTime()
+      const totalDuration = solanaFinalized.getTime() - transactionStart.getTime()
+      this.logger.verbose(`${appKey}: confirmSignature: ${Commitment.Finalized} ${signature}`)
+      const solanaTransaction = await solana.connection.getParsedTransaction(signature, 'finalized')
+      const transaction = await this.updateTransaction(transactionId, {
+        solanaFinalized,
+        solanaFinalizedDuration,
+        solanaTransaction: solanaTransaction ? JSON.parse(JSON.stringify(solanaTransaction)) : undefined,
+        status: TransactionStatus.Finalized,
+        totalDuration,
+      })
+      this.confirmSignatureFinalizedCounter.add(1, { appKey })
+      // Send Event Webhook
+      if (appEnv.webhookEventEnabled && appEnv.webhookEventUrl && transaction) {
+        const eventWebhookTransaction = await this.sendEventWebhook(appKey, appEnv, transaction, headers)
+        if (eventWebhookTransaction.status === TransactionStatus.Failed) {
+          this.logger.error(
+            `Transaction ${transaction.id} sendEventWebhook failed:${eventWebhookTransaction.errors
+              .map((e) => e.message)
+              .join(', ')}`,
+            eventWebhookTransaction.errors,
+          )
+          return eventWebhookTransaction
+        }
+      }
+
+      this.logger.verbose(`${appKey}: confirmSignature: finished ${signature}`)
+      return transaction
+    }
+  }
+
   deleteSolanaConnection(appKey: string): void {
     return this.solana.deleteConnection(appKey)
   }
 
   async getAccountInfo(
     appKey: string,
-    accountId: PublicKeyString,
+    account: PublicKeyString,
     mint: PublicKeyString,
     commitment: Commitment,
   ): Promise<AccountInfo> {
     const solana = await this.getSolanaConnection(appKey)
-    const account = getPublicKey(accountId)
     const accountInfo = await solana.getParsedAccountInfo(account, commitment)
 
     const parsed = accountInfo?.data?.parsed
@@ -153,9 +219,9 @@ export class ApiKineticService implements OnModuleInit {
     const appEnv = await this.data.getAppEnvironmentByAppKey(appKey)
     const appMint = this.validateMint(appEnv, appKey, mint.toString())
 
-    const tokenAccounts = await solana.getTokenAccounts(account, appMint.mint.address, commitment)
+    const tokenAccounts = await this.getTokenAccounts(appKey, account, appMint.mint.address, commitment)
 
-    for (const tokenAccount of tokenAccounts) {
+    for (const tokenAccount of tokenAccounts ?? []) {
       const info = await solana.getParsedAccountInfo(tokenAccount, commitment)
       const parsed = info?.data?.parsed?.info
 
@@ -173,6 +239,19 @@ export class ApiKineticService implements OnModuleInit {
       ...result,
       isOwner: result.tokens.length > 0,
     }
+  }
+
+  async getHistory(
+    appKey: string,
+    account: PublicKeyString,
+    mint: PublicKeyString,
+    commitment: Commitment,
+  ): Promise<HistoryResponse[]> {
+    const solana = await this.getSolanaConnection(appKey)
+
+    return this.getTokenAccounts(appKey, account, mint, commitment).then((accounts) =>
+      solana.getTokenAccountsHistory(accounts),
+    )
   }
 
   getSolanaConnection(appKey: string): Promise<Solana> {
@@ -214,6 +293,7 @@ export class ApiKineticService implements OnModuleInit {
         blockhash,
         index: input.index,
         lastValidBlockHeight,
+        reference: input.reference,
         signer: signer.solana,
         tokenAccount: tokenAccount.account,
       })
@@ -229,8 +309,7 @@ export class ApiKineticService implements OnModuleInit {
         ip,
         lastValidBlockHeight,
         mintPublicKey: mint?.mint?.address,
-        referenceId: input.referenceId,
-        referenceType: input.referenceType,
+        reference: input.reference,
         processingStartedAt,
         solanaTransaction,
         source: input.account,
@@ -245,10 +324,10 @@ export class ApiKineticService implements OnModuleInit {
 
   async getKineticTransaction(
     appKey: string,
-    { referenceId, referenceType, signature }: { signature: string; referenceType: string; referenceId: string },
+    { reference, signature }: { signature: string; reference: string },
   ): Promise<TransactionWithErrors[]> {
-    if (!referenceId?.length && !referenceType?.length && !signature?.length) {
-      throw new BadRequestException(`${appKey}: Please provide either referenceId, referenceType or signature`)
+    if (!reference?.length && !signature?.length) {
+      throw new BadRequestException(`${appKey}: Please provide either reference or signature`)
     }
     const { environment, index } = parseAppKey(appKey)
 
@@ -260,8 +339,7 @@ export class ApiKineticService implements OnModuleInit {
           },
           name: environment,
         },
-        ...(referenceId && { referenceId }),
-        ...(referenceType && { referenceType }),
+        ...(reference && { reference }),
         ...(signature && { signature }),
       },
       include: { errors: true },
@@ -291,6 +369,61 @@ export class ApiKineticService implements OnModuleInit {
     return { lamports } as MinimumRentExemptionBalanceResponse
   }
 
+  getMintAccounts(
+    appKey: string,
+    account: PublicKeyString,
+    commitment: Commitment,
+    mints: BalanceMint[],
+  ): Promise<MintAccounts[]> {
+    // Create cache key
+    const mintsKey = mints.map((mint) => ellipsify(mint.publicKey, 4, '-')).join(',')
+
+    return this.data.cache.wrap<MintAccounts[]>(
+      'solana',
+      `${account}:${mintsKey}:${commitment}`,
+      async () => {
+        // Get token accounts for each mint, gracefully handle errors (e.g. if mint is not found)
+        const mintAccounts = await Promise.allSettled(
+          mints.map((mint) => this.getMintTokenAccounts(appKey, account, mint, commitment)),
+        )
+
+        // Return only fulfilled promises
+        return mintAccounts
+          .filter((item) => item.status === 'fulfilled')
+          .map((item: PromiseFulfilledResult<MintAccounts>) => item.value)
+      },
+      this.data.config.cache.solana.getTokenAccounts.ttl,
+      (value) => !!value.length,
+    )
+  }
+
+  getMintTokenAccounts(
+    appKey: string,
+    account: PublicKeyString,
+    mint: BalanceMint,
+    commitment: Commitment,
+  ): Promise<MintAccounts> {
+    return this.getTokenAccounts(appKey, account, mint.publicKey, commitment).then((accounts) => ({
+      mint,
+      accounts,
+    }))
+  }
+
+  getTokenAccounts(
+    appKey: string,
+    account: PublicKeyString,
+    mint: PublicKeyString,
+    commitment: Commitment,
+  ): Promise<string[]> {
+    return this.data.cache.wrap<string[]>(
+      'solana',
+      `${appKey}:getTokenAccounts:${account}:${mint}:${commitment}`,
+      () => this.getSolanaConnection(appKey).then((solana) => solana.getTokenAccounts(account, mint, commitment)),
+      this.data.config.cache.solana.getTokenAccounts.ttl,
+      (value) => !!value?.length,
+    )
+  }
+
   async getTransaction(appKey: string, signature: string, commitment: Commitment): Promise<GetTransactionResponse> {
     const solana = await this.getSolanaConnection(appKey)
 
@@ -310,8 +443,7 @@ export class ApiKineticService implements OnModuleInit {
     ip,
     lastValidBlockHeight,
     mintPublicKey,
-    referenceId,
-    referenceType,
+    reference,
     processingStartedAt,
     solanaTransaction,
     source,
@@ -323,14 +455,17 @@ export class ApiKineticService implements OnModuleInit {
     // Create the transaction and link it to the app environment
     const transaction: TransactionWithErrors = await this.createAppEnvTransaction(appEnv.id, {
       amount: amount ? removeDecimals(amount.toString(), decimals)?.toString() : undefined,
+      appKey,
+      blockhash,
       commitment,
       decimals,
       destination,
       feePayer,
+      headers,
+      lastValidBlockHeight,
       ip,
       mint: mintPublicKey,
-      referenceId,
-      referenceType,
+      reference,
       source,
       tx,
       ua,
@@ -432,70 +567,6 @@ export class ApiKineticService implements OnModuleInit {
       throw new UnauthorizedException('Request not allowed')
     }
     return { ip, ua }
-  }
-
-  private async confirmSignature({
-    appEnv,
-    appKey,
-    transactionId,
-    blockhash,
-    headers,
-    lastValidBlockHeight,
-    signature,
-    solanaStart,
-    transactionStart,
-  }: {
-    appEnv: AppEnv & { app: App }
-    appKey: string
-    transactionId: string
-    blockhash: string
-    headers?: Record<string, string>
-    lastValidBlockHeight: number
-    signature: string
-    solanaStart: Date
-    transactionStart: Date
-  }) {
-    const solana = await this.solana.getConnection(appKey)
-    this.logger.verbose(`${appKey}: confirmSignature: confirming ${signature}`)
-
-    const finalized = await solana.confirmTransaction(
-      {
-        blockhash,
-        lastValidBlockHeight,
-        signature: signature as string,
-      },
-      Commitment.Finalized,
-    )
-    if (finalized) {
-      const solanaFinalized = new Date()
-      const solanaFinalizedDuration = solanaFinalized.getTime() - solanaStart.getTime()
-      const totalDuration = solanaFinalized.getTime() - transactionStart.getTime()
-      this.logger.verbose(`${appKey}: confirmSignature: ${Commitment.Finalized} ${signature}`)
-      const solanaTransaction = await solana.connection.getParsedTransaction(signature, 'finalized')
-      const transaction = await this.updateTransaction(transactionId, {
-        solanaFinalized,
-        solanaFinalizedDuration,
-        solanaTransaction: solanaTransaction ? JSON.parse(JSON.stringify(solanaTransaction)) : undefined,
-        status: TransactionStatus.Finalized,
-        totalDuration,
-      })
-      this.confirmSignatureFinalizedCounter.add(1, { appKey })
-      // Send Event Webhook
-      if (appEnv.webhookEventEnabled && appEnv.webhookEventUrl && transaction) {
-        const eventWebhookTransaction = await this.sendEventWebhook(appKey, appEnv, transaction, headers)
-        if (eventWebhookTransaction.status === TransactionStatus.Failed) {
-          this.logger.error(
-            `Transaction ${transaction.id} sendEventWebhook failed:${eventWebhookTransaction.errors
-              .map((e) => e.message)
-              .join(', ')}`,
-            eventWebhookTransaction.errors,
-          )
-          return eventWebhookTransaction
-        }
-      }
-
-      this.logger.verbose(`${appKey}: confirmSignature: finished ${signature}`)
-    }
   }
 
   private async sendEventWebhook(

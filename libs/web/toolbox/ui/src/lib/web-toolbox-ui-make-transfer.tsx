@@ -34,7 +34,7 @@ export function WebToolboxUiMakeTransfer({
         destination,
         mint: selectedMint?.publicKey,
         owner: keypair,
-        referenceType: 'Toolbox Transfer',
+        reference: 'Toolbox|Transfer',
       })
       .then((res) => {
         setResponse(res)
