@@ -18,6 +18,7 @@ import {
   removeDecimals,
 } from './helpers'
 import {
+  BalanceMint,
   BalanceMintMap,
   BalanceSummary,
   BalanceToken,
@@ -70,10 +71,12 @@ export class Solana {
     }
   }
 
-  async getMintAccountBalance(mintAccounts: MintAccounts[], commitment: Commitment): Promise<BalanceSummary> {
-    const mints = mintAccounts.map((mint) => mint.mint)
-
-    if (!mints.length) {
+  async getMintAccountBalance(
+    mints: BalanceMint[],
+    mintAccounts: MintAccounts[],
+    commitment: Commitment,
+  ): Promise<BalanceSummary> {
+    if (!mints?.length) {
       throw new Error(`getBalance: No mints provided.`)
     }
     const defaultMint = mints[0]
@@ -114,7 +117,7 @@ export class Solana {
     } catch (e) {
       throw new Error(
         `No token accounts found for ${
-          mints.length > 1 ? `mints ${mints.map((m) => m.publicKey).join(', ')}` : `mint ${defaultMint.publicKey}`
+          mints?.length > 1 ? `mints ${mints?.map((m) => m.publicKey).join(', ')}` : `mint ${defaultMint.publicKey}`
         }`,
       )
     }
