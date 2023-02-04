@@ -1,5 +1,5 @@
 import { ApiCoreService, AppEnvironment } from '@kin-kinetic/api/core/data-access'
-import { ellipsify, parseAppKey } from '@kin-kinetic/api/core/util'
+import { createReference, ellipsify, parseAppKey } from '@kin-kinetic/api/core/util'
 import { parseTransactionError } from '@kin-kinetic/api/kinetic/util'
 import { ApiSolanaService } from '@kin-kinetic/api/solana/data-access'
 import { ApiWebhookService, WebhookType } from '@kin-kinetic/api/webhook/data-access'
@@ -306,6 +306,7 @@ export class ApiKineticService implements OnModuleInit {
       this.closeAccountRequestValidCounter.add(1, { appKey })
 
       const mint = this.validateMint(appEnv, appKey, input.mint)
+      const reference = input?.reference || createReference(input?.referenceType, input?.referenceId)
 
       const { blockhash, lastValidBlockHeight } = await this.getLatestBlockhash(appKey)
 
@@ -316,7 +317,7 @@ export class ApiKineticService implements OnModuleInit {
         blockhash,
         index: input.index,
         lastValidBlockHeight,
-        reference: input.reference,
+        reference,
         signer: signer.solana,
         tokenAccount: tokenAccount.account,
       })
@@ -332,7 +333,7 @@ export class ApiKineticService implements OnModuleInit {
         ip,
         lastValidBlockHeight,
         mintPublicKey: mint?.mint?.address,
-        reference: input.reference,
+        reference,
         processingStartedAt,
         solanaTransaction,
         source: input.account,
