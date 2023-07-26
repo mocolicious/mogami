@@ -308,11 +308,11 @@ export class KineticSdkInternal {
     })
 
     // If the netwrok transaction already then throw 
-    if(this.transactionApi.getTransaction(this.sdkConfig.environment, this.sdkConfig.index, tx.signature.toString(), Commitment.Processed)) {
-      throw new Error('Duplicate signature submitted.')
-    }
+    // if(this.transactionApi.getTransaction(this.sdkConfig.environment, this.sdkConfig.index, tx.signature.toString(), Commitment.Processed)) {
+    //   throw new Error('Duplicate signature submitted.')
+    // }
     // If Kinetic has the tx then throw 
-    else if()
+    // else if()
 
     return this.makeTransferRequest({
       commitment,
