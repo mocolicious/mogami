@@ -312,7 +312,7 @@ export class KineticSdkInternal {
     //   throw new Error('Duplicate signature submitted.')
     // }
     // If Kinetic has the tx then throw 
-    // else if()
+
 
     return this.makeTransferRequest({
       commitment,
