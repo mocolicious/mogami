@@ -9,8 +9,6 @@ FROM node:16.14-alpine as base
 
 RUN apk add --update --no-cache git
 
-ENV HUSKY=0
-
 # Apply Yarn settings
 RUN yarn config set cache-folder ~/.yarn \
     && yarn config set network-timeout 300000 -g \

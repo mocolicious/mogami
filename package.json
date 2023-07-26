@@ -25,7 +25,6 @@
     "format:check": "nx format:check",
     "format:write": "nx format:write",
     "lint:all": "yarn nx run-many --target lint --all --verbose",
-    "prepare": "husky install",
     "start": "yarn prisma db push && node dist/apps/api/main.js",
     "test": "nx test && yarn test:sdk-e2e",
     "test:api-e2e": "nx run api-e2e:e2e",
@@ -79,10 +78,10 @@
     "@prisma/client": "^4.8.1",
     "@saas-ui/forms": "1.4.1",
     "@saas-ui/react": "^1.7.3",
-    "@scure/bip39": "^1.1.0",
+    "@scure/bip39": "^1.2.1",
     "@solana/buffer-layout": "4.0.0",
     "@solana/spl-token": "^0.3.7",
-    "@solana/web3.js": "1.73.0",
+    "@solana/web3.js": "^1.78.0",
     "@tabler/icons": "^1.119.0",
     "@types/react-copy-to-clipboard": "^5.0.4",
     "@types/react-table": "^7.7.14",
@@ -215,7 +214,10 @@
     "eslint-plugin-react": "7.32.0",
     "eslint-plugin-react-hooks": "4.6.0",
     "fake-indexeddb": "^4.0.1",
+<<<<<<< Updated upstream
     "husky": "^8.0.3",
+=======
+>>>>>>> Stashed changes
     "jest": "28.1.3",
     "jest-environment-jsdom": "^29.0.2",
     "lint-staged": "^13.1.0",
